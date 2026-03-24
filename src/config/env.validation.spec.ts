@@ -84,6 +84,23 @@ describe('validateEnv', () => {
     ).toThrow('BUSINESS_TIMEZONE must be a valid IANA timezone');
   });
 
+  it('allows BUSINESS_TIMEZONE to be omitted in production', () => {
+    const env = validateEnv({
+      NODE_ENV: 'production',
+      APP_PORT: '4000',
+      MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
+      JWT_ACCESS_SECRET: 'access-secret',
+      JWT_REFRESH_SECRET: 'refresh-secret',
+      JWT_ACCESS_TTL: '15m',
+      JWT_REFRESH_TTL: '7d',
+      SUPER_ADMIN_NAME: 'Rico',
+      SUPER_ADMIN_EMAIL: 'rico@admin.com',
+      SUPER_ADMIN_PASSWORD: 'secret',
+    });
+
+    expect(env.BUSINESS_TIMEZONE).toBeUndefined();
+  });
+
   it('validates FRONTEND_ORIGIN when provided', () => {
     const env = validateEnv({
       NODE_ENV: 'development',

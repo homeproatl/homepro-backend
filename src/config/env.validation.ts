@@ -1,7 +1,7 @@
 type AppEnv = {
   APP_PORT: number;
   MONGO_URI: string;
-  BUSINESS_TIMEZONE: string;
+  BUSINESS_TIMEZONE?: string;
   FRONTEND_ORIGIN?: string;
   INVOICE_EMAIL_TRANSPORT?: string;
   INVOICE_EMAIL_FROM?: string;
@@ -70,8 +70,15 @@ function requiredPort(env: NodeJS.ProcessEnv, fallback?: string): number {
   return port;
 }
 
-function requiredTimeZone(env: NodeJS.ProcessEnv, fallback?: string): string {
-  const value = requiredValue('BUSINESS_TIMEZONE', env, fallback);
+function optionalTimeZone(
+  env: NodeJS.ProcessEnv,
+  fallback?: string,
+): string | undefined {
+  const value = env.BUSINESS_TIMEZONE ?? fallback;
+
+  if (!value) {
+    return undefined;
+  }
 
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: value }).format(new Date());
@@ -267,7 +274,7 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
   return {
     APP_PORT: requiredPort(env, defaults.APP_PORT),
     MONGO_URI: requiredMongoUri(env, defaults.MONGO_URI),
-    BUSINESS_TIMEZONE: requiredTimeZone(env, defaults.BUSINESS_TIMEZONE),
+    BUSINESS_TIMEZONE: optionalTimeZone(env, defaults.BUSINESS_TIMEZONE),
     FRONTEND_ORIGIN: optionalOrigin(env, defaults.FRONTEND_ORIGIN),
     INVOICE_EMAIL_TRANSPORT: invoiceTransport,
     INVOICE_EMAIL_FROM: invoiceEmailFrom,
