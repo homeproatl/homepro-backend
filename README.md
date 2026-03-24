@@ -10,6 +10,8 @@ NestJS API for the Rico admin app.
 
 The frontend does not proxy requests through Next.js anymore. The browser talks to this API directly.
 
+This README is safe to update independently of runtime behavior.
+
 ## Local setup
 
 1. Install dependencies:
