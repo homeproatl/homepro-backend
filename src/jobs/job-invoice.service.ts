@@ -827,7 +827,7 @@ export class JobInvoiceService implements OnModuleDestroy {
         .emails.send({
           from: fromAddress,
           to: [input.recipientEmail],
-          subject: `Invoice ${input.invoiceNumber} from Rico Workshop`,
+          subject: `Invoice ${input.invoiceNumber} from Gmb Workshop`,
           html: input.html,
           text: input.text,
           attachments: [
@@ -869,7 +869,7 @@ export class JobInvoiceService implements OnModuleDestroy {
     return [
       `Dear ${customerName},`,
       '',
-      'Thank you for choosing Rico Workshop.',
+      'Thank you for your business.',
       '',
       `Attached to this email is your invoice ${input.invoiceNumber} for job ${input.jobNumber}.`,
       '',
@@ -881,7 +881,7 @@ export class JobInvoiceService implements OnModuleDestroy {
       'If you have any questions, please contact us and we will be happy to assist.',
       '',
       'Kind regards,',
-      'Rico Workshop',
+      'Gmb Workshop',
     ].join('\n');
   }
 

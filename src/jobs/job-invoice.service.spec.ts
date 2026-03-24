@@ -233,7 +233,7 @@ describe('JobInvoiceService', () => {
       expect.objectContaining({
         from: 'Gmb Workshop <billing@gmbworkshop.shop>',
         to: ['customer@test.com'],
-        subject: 'Invoice INV-123456 from Rico Workshop',
+        subject: 'Invoice INV-123456 from Gmb Workshop',
         attachments: [
           expect.objectContaining({
             filename: 'INV-123456.pdf',
@@ -384,6 +384,7 @@ describe('JobInvoiceService', () => {
     expect(html).toContain('Parts Used');
     expect(html).toContain('Service &amp; Repair Billing');
     expect(html).toContain('Payment Status Unpaid');
+    expect(html).toContain('data:image/jpeg;base64,');
     expect(html).toContain(
       'This invoice reflects the billing snapshot and payment status captured for this job.',
     );
@@ -400,10 +401,13 @@ describe('JobInvoiceService', () => {
     });
 
     expect(html).toContain('Invoice Attached');
-    expect(html).toContain('Thank you for choosing Rico Workshop.');
+    expect(html).toContain('data:image/jpeg;base64,');
+    expect(html).toContain('Thank you for your business.');
+    expect(html).toContain('Kind regards,');
     expect(html).toContain(
       'Please open the attached PDF to review the complete invoice details.',
     );
+    expect(html).not.toContain('Thank you for choosing Rico Workshop.');
     expect(html).not.toContain('Service Invoice');
   });
 
@@ -531,7 +535,7 @@ describe('JobInvoiceService', () => {
           }
 
           if (key === 'INVOICE_EMAIL_FROM') {
-            return 'Rico Workshop <jibola619@gmail.com>';
+            return 'Gmb Workshop <jibola619@gmail.com>';
           }
 
           if (key === 'INVOICE_EMAIL_RESEND_API_KEY') {

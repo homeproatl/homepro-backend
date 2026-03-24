@@ -1,3 +1,5 @@
+import { INVOICE_LOGO_DATA_URL } from './invoice-logo';
+
 export type InvoiceDocumentLineItem = {
   description: string;
   quantity: number;
@@ -71,6 +73,14 @@ function formatPaymentStatusLabel(value: string) {
     .join(' ');
 }
 
+function renderInvoiceLogo(input: {
+  alt: string;
+  maxWidth: number;
+  marginBottom: number;
+}) {
+  return `<img src="${INVOICE_LOGO_DATA_URL}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
+}
+
 export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
   const paymentStatusLabel = formatPaymentStatusLabel(invoice.paymentStatus);
   const servicesRows = invoice.services
@@ -107,7 +117,7 @@ export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Invoice ${escapeHtml(invoice.invoiceNumber)} from Rico Workshop</title>
+    <title>Invoice ${escapeHtml(invoice.invoiceNumber)} from Gmb Workshop</title>
     <style>
       :root { color-scheme: light; }
       html, body { margin: 0; padding: 0; }
@@ -154,7 +164,11 @@ export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
             <table role="presentation" style="width:100%;border-collapse:collapse;">
               <tr>
                 <td class="invoice-header-left" style="vertical-align:top;padding:0 24px 0 0;">
-                  <p style="margin:0;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#52525b;">Rico Workshop</p>
+                  ${renderInvoiceLogo({
+                    alt: 'Gmb Workshop',
+                    maxWidth: 260,
+                    marginBottom: 8,
+                  })}
                   <p style="margin:4px 0 0;font-size:14px;color:#71717a;">Service &amp; Repair Billing</p>
                   <h1 style="margin:16px 0 0;font-size:36px;line-height:1.1;font-weight:700;">Service Invoice</h1>
                   <p style="margin:12px 0 0;font-size:16px;color:#52525b;">Job ${escapeHtml(invoice.jobNumber)} · ${escapeHtml(invoice.title)}</p>
@@ -283,14 +297,18 @@ export function renderInvoiceEmailMessageHtml(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Invoice ${invoiceNumber} from Rico Workshop</title>
+    <title>Invoice ${invoiceNumber} from Gmb Workshop</title>
   </head>
   <body style="margin:0;padding:24px;background:#f8fafc;color:#111827;font-family:Helvetica,Arial,sans-serif;">
     <div style="margin:0 auto;max-width:640px;border:1px solid #e4e4e7;border-radius:8px;background:#ffffff;padding:32px;">
-      <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#52525b;">Rico Workshop</p>
+      ${renderInvoiceLogo({
+        alt: 'Gmb Workshop',
+        maxWidth: 220,
+        marginBottom: 8,
+      })}
       <h1 style="margin:0 0 20px;font-size:28px;line-height:1.2;">Invoice Attached</h1>
       <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Dear ${customerName},</p>
-      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Thank you for choosing Rico Workshop.</p>
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Thank you for your business.</p>
       <p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Attached to this email is your invoice <strong>${invoiceNumber}</strong> for job <strong>${jobNumber}</strong>.</p>
       <div style="margin:0 0 20px;border:1px solid #e4e4e7;border-radius:8px;background:#fafafa;padding:18px 20px;">
         <p style="margin:0 0 8px;font-size:14px;color:#52525b;"><strong>Amount due:</strong> ${amountDue}</p>
@@ -298,7 +316,12 @@ export function renderInvoiceEmailMessageHtml(
       </div>
       <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Please open the attached PDF to review the complete invoice details.</p>
       <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">If you have any questions, please contact us and we will be happy to assist.</p>
-      <p style="margin:0;font-size:16px;line-height:1.6;">Kind regards,<br />Rico Workshop</p>
+      <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Kind regards,</p>
+      ${renderInvoiceLogo({
+        alt: 'Gmb Workshop',
+        maxWidth: 180,
+        marginBottom: 0,
+      })}
     </div>
   </body>
 </html>`;
