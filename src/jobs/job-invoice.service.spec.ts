@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { SendMailOptions } from 'nodemailer';
-import { renderInvoiceEmailMessageHtml } from '../../../Frontend/src/lib/invoice-template';
+import { renderInvoiceEmailMessageHtml } from './invoice-template';
 import { JobInvoiceService } from './job-invoice.service';
 import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.enum';
 
@@ -312,6 +312,61 @@ describe('JobInvoiceService', () => {
 
     expect(renderInvoicePdf).toHaveBeenCalledWith(aggregate.payload);
     expect(result.fileName).toBe('JOB-001-preview.pdf');
+  });
+
+  it('reports send_ready as false in the job billing summary when runtime send blockers exist', async () => {
+    const service = createService();
+
+    jest
+      .spyOn(
+        service as unknown as {
+          loadInvoiceAggregate: (jobId: string) => Promise<unknown>;
+        },
+        'loadInvoiceAggregate',
+      )
+      .mockResolvedValue({
+        job: { _id: 'job-1' },
+        blockers: [],
+        payload: {},
+        billableHash: 'hash-1',
+      });
+    jest
+      .spyOn(
+        service as unknown as {
+          reconcileLatestSnapshot: (aggregate: unknown) => Promise<unknown>;
+        },
+        'reconcileLatestSnapshot',
+      )
+      .mockResolvedValue({
+        status: JobInvoiceSnapshotStatus.ISSUED,
+        invoice_number: 'INV-123456',
+      });
+    jest
+      .spyOn(
+        service as unknown as {
+          getInvoiceBillingReadiness: (aggregate: unknown) => Promise<{
+            pdfBlockers: string[];
+            sendBlockers: string[];
+          }>;
+        },
+        'getInvoiceBillingReadiness',
+      )
+      .mockResolvedValue({
+        pdfBlockers: [
+          'Invoice PDF rendering is unavailable. Verify the bundled Chromium runtime before sending or downloading invoices.',
+        ],
+        sendBlockers: [
+          'Invoice PDF rendering is unavailable. Verify the bundled Chromium runtime before sending or downloading invoices.',
+        ],
+      });
+
+    await expect(service.getJobBillingSummary('job-1')).resolves.toEqual({
+      invoice_status: JobInvoiceSnapshotStatus.ISSUED,
+      latest_invoice_number: 'INV-123456',
+      invoice_ready: true,
+      send_ready: false,
+      invoice_needs_refresh: false,
+    });
   });
 
   it('renders the invoice email HTML with the public preview layout structure', () => {

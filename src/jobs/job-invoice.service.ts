@@ -16,7 +16,7 @@ import {
   type InvoiceDocumentModel,
   renderInvoiceEmailMessageHtml,
   renderInvoiceDocumentHtml,
-} from '../../../Frontend/src/lib/invoice-template';
+} from './invoice-template';
 import { generateOrderId } from '../common/utils/order-id';
 import { asObjectId } from '../common/utils/object-id';
 import {
@@ -141,6 +141,7 @@ type JobInvoiceListSummary = {
   invoice_status: JobInvoiceSnapshotStatus | null;
   latest_invoice_number: string | null;
   invoice_ready: boolean;
+  send_ready: boolean;
   invoice_needs_refresh: boolean;
 };
 
@@ -154,6 +155,11 @@ export class JobInvoiceService implements OnModuleDestroy {
   private readonly logger = new Logger(JobInvoiceService.name);
   private smtpTransport: Transporter | null = null;
   private pdfBrowserPromise: Promise<Browser> | null = null;
+  private invoiceRuntimeReadinessPromise: Promise<{
+    pdfBlockers: string[];
+    sendBlockers: string[];
+  }> | null = null;
+  private invoiceRuntimeReadinessExpiresAt = 0;
 
   constructor(
     @InjectModel(Job.name)
@@ -232,11 +238,13 @@ export class JobInvoiceService implements OnModuleDestroy {
   async getJobBillingSummary(jobId: string): Promise<JobInvoiceListSummary> {
     const aggregate = await this.loadInvoiceAggregate(jobId);
     const latestSnapshot = await this.reconcileLatestSnapshot(aggregate);
+    const readiness = await this.getInvoiceBillingReadiness(aggregate);
 
     return {
       invoice_status: latestSnapshot?.status ?? null,
       latest_invoice_number: latestSnapshot?.invoice_number ?? null,
       invoice_ready: aggregate.blockers.length === 0,
+      send_ready: readiness.sendBlockers.length === 0,
       invoice_needs_refresh:
         latestSnapshot?.status === JobInvoiceSnapshotStatus.STALE,
     };
@@ -1003,15 +1011,52 @@ export class JobInvoiceService implements OnModuleDestroy {
     }
   }
 
+  private async getGlobalInvoiceRuntimeReadiness() {
+    const now = Date.now();
+    if (
+      this.invoiceRuntimeReadinessPromise &&
+      now < this.invoiceRuntimeReadinessExpiresAt
+    ) {
+      return this.invoiceRuntimeReadinessPromise;
+    }
+
+    const readinessPromise = (async () => {
+      const transportBlockers = this.getTransportRuntimeBlockers();
+      const pdfBlockers = await this.getPdfBlockers();
+
+      return {
+        pdfBlockers,
+        sendBlockers: Array.from(
+          new Set([...transportBlockers, ...pdfBlockers]),
+        ),
+      };
+    })();
+
+    this.invoiceRuntimeReadinessPromise = readinessPromise;
+    this.invoiceRuntimeReadinessExpiresAt = now + 30_000;
+
+    try {
+      return await readinessPromise;
+    } catch (error) {
+      if (this.invoiceRuntimeReadinessPromise === readinessPromise) {
+        this.invoiceRuntimeReadinessPromise = null;
+        this.invoiceRuntimeReadinessExpiresAt = 0;
+      }
+      throw error;
+    }
+  }
+
   private async getInvoiceBillingReadiness(
     aggregate: InvoiceAggregate,
   ): Promise<InvoiceBillingReadiness> {
-    const transportBlockers = this.getTransportSendBlockers(aggregate);
-    const pdfBlockers = await this.getPdfBlockers();
+    const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
+    const aggregateBlockers = [...aggregate.blockers];
 
     return {
-      pdfBlockers,
-      sendBlockers: Array.from(new Set([...transportBlockers, ...pdfBlockers])),
+      pdfBlockers: runtimeReadiness.pdfBlockers,
+      sendBlockers: Array.from(
+        new Set([...aggregateBlockers, ...runtimeReadiness.sendBlockers]),
+      ),
     };
   }
 
@@ -1051,8 +1096,8 @@ export class JobInvoiceService implements OnModuleDestroy {
     }
   }
 
-  private getTransportSendBlockers(aggregate: InvoiceAggregate) {
-    const blockers = [...aggregate.blockers];
+  private getTransportRuntimeBlockers() {
+    const blockers: string[] = [];
     const transport = this.getInvoiceEmailTransport();
 
     if (transport === 'DISABLED') {
@@ -1067,7 +1112,7 @@ export class JobInvoiceService implements OnModuleDestroy {
       );
     }
 
-    return Array.from(new Set(blockers));
+    return blockers;
   }
 
   private getInvoiceEmailTransport(): InvoiceEmailTransport {

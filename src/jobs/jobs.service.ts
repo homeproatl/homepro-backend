@@ -115,11 +115,13 @@ export class JobsService {
       invoice_status: JobInvoiceSnapshotStatus | null;
       latest_invoice_number: string | null;
       invoice_ready: boolean;
+      send_ready: boolean;
       invoice_needs_refresh: boolean;
     } = {
       invoice_status: null,
       latest_invoice_number: null,
       invoice_ready: false,
+      send_ready: false,
       invoice_needs_refresh: false,
     };
 
@@ -772,6 +774,7 @@ export class JobsService {
       invoice_status: JobInvoiceSnapshotStatus | null;
       latest_invoice_number: string | null;
       invoice_ready: boolean;
+      send_ready: boolean;
       invoice_needs_refresh: boolean;
     },
   ) {
@@ -795,6 +798,7 @@ export class JobsService {
       invoice_status: billingSummary?.invoice_status ?? null,
       latest_invoice_number: billingSummary?.latest_invoice_number ?? null,
       invoice_ready: billingSummary?.invoice_ready ?? false,
+      send_ready: billingSummary?.send_ready ?? false,
       invoice_needs_refresh: billingSummary?.invoice_needs_refresh ?? false,
     };
   }

@@ -35,6 +35,7 @@ describe('JobsService', () => {
           invoice_status: null,
           latest_invoice_number: null,
           invoice_ready: true,
+          send_ready: true,
           invoice_needs_refresh: false,
         }),
       } as never,
@@ -60,6 +61,7 @@ describe('JobsService', () => {
       vehicle_id: '507f1f77bcf86cd799439012',
       is_overdue: false,
       invoice_ready: true,
+      send_ready: true,
     });
   });
 
@@ -94,6 +96,7 @@ describe('JobsService', () => {
           invoice_status: JobInvoiceSnapshotStatus.STALE,
           latest_invoice_number: 'INV-001',
           invoice_ready: true,
+          send_ready: true,
           invoice_needs_refresh: true,
         }),
       } as never,
@@ -110,6 +113,7 @@ describe('JobsService', () => {
       invoice_status: JobInvoiceSnapshotStatus.STALE,
       latest_invoice_number: 'INV-001',
       invoice_ready: true,
+      send_ready: true,
       invoice_needs_refresh: true,
       is_overdue: true,
     });
@@ -186,6 +190,7 @@ describe('JobsService', () => {
           invoice_status: null,
           latest_invoice_number: null,
           invoice_ready: false,
+          send_ready: false,
           invoice_needs_refresh: false,
         }),
       } as never,
@@ -245,6 +250,7 @@ describe('JobsService', () => {
           invoice_status: null,
           latest_invoice_number: null,
           invoice_ready: false,
+          send_ready: false,
           invoice_needs_refresh: false,
         }),
       } as never,
