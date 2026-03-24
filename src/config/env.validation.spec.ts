@@ -51,6 +51,19 @@ describe('validateEnv', () => {
     );
   });
 
+  it('supports Atlas-style multi-host mongodb URIs', () => {
+    const env = validateEnv({
+      NODE_ENV: 'development',
+      SUPER_ADMIN_PASSWORD: 'secret',
+      MONGO_URI:
+        'mongodb://tired:tired@ac-gc3q509-shard-00-00.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-01.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-02.jhsrzzq.mongodb.net:27017/rico?ssl=true&replicaSet=atlas-8hz1ij-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0',
+    });
+
+    expect(env.MONGO_URI).toBe(
+      'mongodb://tired:tired@ac-gc3q509-shard-00-00.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-01.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-02.jhsrzzq.mongodb.net:27017/rico?ssl=true&replicaSet=atlas-8hz1ij-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0',
+    );
+  });
+
   it('supports legacy MONGODB_URI alias', () => {
     const env = validateEnv({
       NODE_ENV: 'development',

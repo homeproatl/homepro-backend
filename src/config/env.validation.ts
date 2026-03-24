@@ -40,21 +40,23 @@ function requiredMongoUri(env: NodeJS.ProcessEnv, fallback?: string): string {
     throw new Error('Missing required environment variable: MONGO_URI');
   }
 
-  let parsedUri: URL;
-  try {
-    parsedUri = new URL(value);
-  } catch {
-    throw new Error('Invalid MONGO_URI format');
-  }
-
+  const normalized = value.trim();
   const isMongoProtocol =
-    parsedUri.protocol === 'mongodb:' || parsedUri.protocol === 'mongodb+srv:';
+    normalized.startsWith('mongodb://') ||
+    normalized.startsWith('mongodb+srv://');
 
   if (!isMongoProtocol) {
     throw new Error('MONGO_URI must use mongodb:// or mongodb+srv:// protocol');
   }
 
-  return value;
+  const mongoUriPattern =
+    /^mongodb(\+srv)?:\/\/[^/\s]+(?:\/[^\s?]*)?(?:\?[^\s#]*)?$/;
+
+  if (!mongoUriPattern.test(normalized)) {
+    throw new Error('Invalid MONGO_URI format');
+  }
+
+  return normalized;
 }
 
 function requiredPort(env: NodeJS.ProcessEnv, fallback?: string): number {
