@@ -1246,6 +1246,26 @@ export class JobInvoiceService implements OnModuleDestroy {
   }
 
   private asInvoiceErrorMessage(error: unknown) {
+    const message =
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof error.message === 'string'
+        ? error.message.trim()
+        : '';
+
+    if (
+      /unable to fetch data/i.test(message) ||
+      /request could not be resolved/i.test(message) ||
+      /fetch failed/i.test(message)
+    ) {
+      return 'Invoice sending could not reach Resend. Check the Resend API key, sender domain setup, and outbound network access, then try again.';
+    }
+
+    if (/timeout/i.test(message) || /timed out/i.test(message)) {
+      return 'Invoice sending timed out while waiting for Resend. Check the Resend configuration or provider availability, then try again.';
+    }
+
     if (
       error &&
       typeof error === 'object' &&

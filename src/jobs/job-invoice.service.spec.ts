@@ -244,6 +244,22 @@ describe('JobInvoiceService', () => {
     );
   });
 
+  it('normalizes unresolved Resend fetch failures into an actionable invoice error', () => {
+    const service = createService();
+
+    expect(
+      (
+        service as unknown as {
+          asInvoiceErrorMessage: (error: unknown) => string;
+        }
+      ).asInvoiceErrorMessage(
+        new Error('Unable to fetch data. The request could not be resolved.'),
+      ),
+    ).toBe(
+      'Invoice sending could not reach Resend. Check the Resend API key, sender domain setup, and outbound network access, then try again.',
+    );
+  });
+
   it('uses the live preview document for PDF download when the latest snapshot is stale', async () => {
     const service = createService();
     const aggregate = {
