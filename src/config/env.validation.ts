@@ -14,9 +14,9 @@ type AppEnv = {
   JWT_REFRESH_SECRET: string;
   JWT_ACCESS_TTL: string;
   JWT_REFRESH_TTL: string;
-  SUPER_ADMIN_NAME: string;
-  SUPER_ADMIN_EMAIL: string;
-  SUPER_ADMIN_PASSWORD: string;
+  SUPER_ADMIN_NAME?: string;
+  SUPER_ADMIN_EMAIL?: string;
+  SUPER_ADMIN_PASSWORD?: string;
 };
 
 function requiredValue(
@@ -207,6 +207,18 @@ function optionalSmtpCredential(
   return value;
 }
 
+function optionalEnvValue(
+  env: NodeJS.ProcessEnv,
+  key: keyof Pick<
+    AppEnv,
+    'SUPER_ADMIN_NAME' | 'SUPER_ADMIN_EMAIL' | 'SUPER_ADMIN_PASSWORD'
+  >,
+  fallback?: string,
+) {
+  const value = env[key] ?? fallback;
+  return value || undefined;
+}
+
 export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
   const isProd = env.NODE_ENV === 'production';
 
@@ -223,8 +235,6 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
         JWT_REFRESH_SECRET: 'dev-refresh-secret',
         JWT_ACCESS_TTL: '15m',
         JWT_REFRESH_TTL: '7d',
-        SUPER_ADMIN_NAME: 'Rico',
-        SUPER_ADMIN_EMAIL: 'rico@admin.com',
       };
 
   const invoiceTransport = optionalInvoiceTransport(
@@ -303,19 +313,19 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
       env,
       defaults.JWT_REFRESH_TTL,
     ),
-    SUPER_ADMIN_NAME: requiredValue(
-      'SUPER_ADMIN_NAME',
+    SUPER_ADMIN_NAME: optionalEnvValue(
       env,
+      'SUPER_ADMIN_NAME',
       defaults.SUPER_ADMIN_NAME,
     ),
-    SUPER_ADMIN_EMAIL: requiredValue(
-      'SUPER_ADMIN_EMAIL',
+    SUPER_ADMIN_EMAIL: optionalEnvValue(
       env,
+      'SUPER_ADMIN_EMAIL',
       defaults.SUPER_ADMIN_EMAIL,
     ),
-    SUPER_ADMIN_PASSWORD: requiredValue(
-      'SUPER_ADMIN_PASSWORD',
+    SUPER_ADMIN_PASSWORD: optionalEnvValue(
       env,
+      'SUPER_ADMIN_PASSWORD',
       defaults.SUPER_ADMIN_PASSWORD,
     ),
   };

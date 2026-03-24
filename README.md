@@ -43,7 +43,7 @@ SUPER_ADMIN_PASSWORD=replace-with-secure-password
 
 `FRONTEND_ORIGIN` controls which browser origin is allowed to call the API during development or deployment.
 
-`SUPER_ADMIN_*` controls the first admin account used to access the app after seeding.
+`SUPER_ADMIN_*` only matters for `npm run seed:super-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
 
 ## Run the API
 

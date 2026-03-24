@@ -93,9 +93,6 @@ describe('validateEnv', () => {
       JWT_REFRESH_SECRET: 'refresh-secret',
       JWT_ACCESS_TTL: '15m',
       JWT_REFRESH_TTL: '7d',
-      SUPER_ADMIN_NAME: 'Rico',
-      SUPER_ADMIN_EMAIL: 'rico@admin.com',
-      SUPER_ADMIN_PASSWORD: 'secret',
     });
 
     expect(env.BUSINESS_TIMEZONE).toBeUndefined();
@@ -131,12 +128,20 @@ describe('validateEnv', () => {
     ).toThrow('MONGO_URI must use mongodb:// or mongodb+srv:// protocol');
   });
 
-  it('requires SUPER_ADMIN_PASSWORD even outside production', () => {
-    expect(() =>
-      validateEnv({
-        NODE_ENV: 'development',
-      }),
-    ).toThrow('Missing required environment variable: SUPER_ADMIN_PASSWORD');
+  it('allows SUPER_ADMIN envs to be omitted during normal API boot', () => {
+    const env = validateEnv({
+      NODE_ENV: 'production',
+      APP_PORT: '4000',
+      MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
+      JWT_ACCESS_SECRET: 'access-secret',
+      JWT_REFRESH_SECRET: 'refresh-secret',
+      JWT_ACCESS_TTL: '15m',
+      JWT_REFRESH_TTL: '7d',
+    });
+
+    expect(env.SUPER_ADMIN_NAME).toBeUndefined();
+    expect(env.SUPER_ADMIN_EMAIL).toBeUndefined();
+    expect(env.SUPER_ADMIN_PASSWORD).toBeUndefined();
   });
 
   it('accepts SMTP transport configuration when fully provided', () => {
@@ -149,9 +154,6 @@ describe('validateEnv', () => {
       JWT_REFRESH_SECRET: 'refresh-secret',
       JWT_ACCESS_TTL: '15m',
       JWT_REFRESH_TTL: '7d',
-      SUPER_ADMIN_NAME: 'Rico',
-      SUPER_ADMIN_EMAIL: 'rico@admin.com',
-      SUPER_ADMIN_PASSWORD: 'secret',
       INVOICE_EMAIL_TRANSPORT: 'SMTP',
       INVOICE_EMAIL_FROM: 'billing@rico.local',
       INVOICE_EMAIL_SMTP_HOST: 'smtp.example.com',
@@ -178,9 +180,6 @@ describe('validateEnv', () => {
         JWT_REFRESH_SECRET: 'refresh-secret',
         JWT_ACCESS_TTL: '15m',
         JWT_REFRESH_TTL: '7d',
-        SUPER_ADMIN_NAME: 'Rico',
-        SUPER_ADMIN_EMAIL: 'rico@admin.com',
-        SUPER_ADMIN_PASSWORD: 'secret',
         INVOICE_EMAIL_TRANSPORT: 'SMTP',
         INVOICE_EMAIL_FROM: 'billing@rico.local',
         INVOICE_EMAIL_SMTP_HOST: 'smtp.example.com',
