@@ -400,7 +400,9 @@ describe('JobInvoiceService', () => {
     expect(html).toContain('Parts Used');
     expect(html).toContain('Service &amp; Repair Billing');
     expect(html).toContain('Payment Status Unpaid');
-    expect(html).toContain('data:image/jpeg;base64,');
+    expect(html).toContain(
+      'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg',
+    );
     expect(html).toContain(
       'This invoice reflects the billing snapshot and payment status captured for this job.',
     );
@@ -417,7 +419,9 @@ describe('JobInvoiceService', () => {
     });
 
     expect(html).toContain('Invoice Attached');
-    expect(html).toContain('data:image/jpeg;base64,');
+    expect(html).toContain(
+      'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg',
+    );
     expect(html).toContain('Thank you for your business.');
     expect(html).toContain('Kind regards,');
     expect(html).toContain(

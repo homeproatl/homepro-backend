@@ -1,5 +1,3 @@
-import { INVOICE_LOGO_DATA_URL } from './invoice-logo';
-
 export type InvoiceDocumentLineItem = {
   description: string;
   quantity: number;
@@ -35,6 +33,9 @@ export type InvoiceEmailMessageModel = {
   dueDate: string | null;
   timeZone: string;
 };
+
+const INVOICE_LOGO_URL =
+  'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg';
 
 function escapeHtml(value: string) {
   return value
@@ -78,7 +79,7 @@ function renderInvoiceLogo(input: {
   maxWidth: number;
   marginBottom: number;
 }) {
-  return `<img src="${INVOICE_LOGO_DATA_URL}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
+  return `<img src="${INVOICE_LOGO_URL}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
 }
 
 export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {

@@ -1100,6 +1100,20 @@ export class JobInvoiceService implements OnModuleDestroy {
         await page.setContent(html, {
           waitUntil: ['domcontentloaded', 'load', 'networkidle0'],
         });
+        if (typeof page.waitForFunction === 'function') {
+          await page
+            .waitForFunction(
+              () =>
+                Array.from(document.images).every(
+                  (image) =>
+                    image.complete &&
+                    typeof image.naturalWidth === 'number' &&
+                    image.naturalWidth > 0,
+                ),
+              { timeout: 10_000 },
+            )
+            .catch(() => undefined);
+        }
 
         const pdfBytes = await page.pdf({
           format: 'Letter',
