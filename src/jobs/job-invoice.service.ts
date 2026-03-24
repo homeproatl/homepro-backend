@@ -9,8 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import nodemailer, { type Transporter } from 'nodemailer';
 import puppeteer, { type Browser } from 'puppeteer';
+import { Resend } from 'resend';
 import {
   type InvoiceEmailMessageModel,
   type InvoiceDocumentModel,
@@ -135,7 +135,7 @@ type InvoiceEmailResult = {
   providerMessageId: string;
 };
 
-type InvoiceEmailTransport = 'LOG' | 'DISABLED' | 'SMTP';
+type InvoiceEmailTransport = 'LOG' | 'DISABLED' | 'RESEND';
 
 type JobInvoiceListSummary = {
   invoice_status: JobInvoiceSnapshotStatus | null;
@@ -150,10 +150,26 @@ type InvoiceBillingReadiness = {
   sendBlockers: string[];
 };
 
+const PUBLIC_MAILBOX_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'ymail.com',
+  'rocketmail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+]);
+
 @Injectable()
 export class JobInvoiceService implements OnModuleDestroy {
   private readonly logger = new Logger(JobInvoiceService.name);
-  private smtpTransport: Transporter | null = null;
+  private resendClient: Resend | null = null;
   private pdfBrowserPromise: Promise<Browser> | null = null;
   private invoiceRuntimeReadinessPromise: Promise<{
     pdfBlockers: string[];
@@ -288,15 +304,22 @@ export class JobInvoiceService implements OnModuleDestroy {
 
   async sendInvoice(jobId: string, actorUserId?: string) {
     const aggregate = await this.loadInvoiceAggregate(jobId);
+    const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
+    if (runtimeReadiness.sendBlockers.length > 0) {
+      throw new ServiceUnavailableException(
+        runtimeReadiness.sendBlockers.join(' '),
+      );
+    }
     const snapshot = await this.resolveIssueableSnapshot(
       aggregate,
       actorUserId,
     );
+    const invoiceProvider = this.getInvoiceProviderName();
     const dispatch = await this.jobInvoiceDispatchModel.create({
       job_id: snapshot.job_id,
       invoice_snapshot_id: snapshot._id,
       recipient_email: aggregate.customer.email?.toLowerCase(),
-      provider: 'pending',
+      provider: invoiceProvider,
       provider_message_id: null,
       delivery_status: JobInvoiceDispatchStatus.PENDING,
       error_message: null,
@@ -365,7 +388,6 @@ export class JobInvoiceService implements OnModuleDestroy {
         dispatch: this.serializeDispatch(dispatch),
       };
     } catch (error) {
-      dispatch.provider = 'unavailable';
       dispatch.provider_message_id = null;
       dispatch.delivery_status = JobInvoiceDispatchStatus.FAILED;
       dispatch.error_message = this.asInvoiceErrorMessage(error);
@@ -800,35 +822,37 @@ export class JobInvoiceService implements OnModuleDestroy {
       );
     }
 
-    return this.getSmtpTransport()
-      .sendMail({
-        from: fromAddress,
-        to: input.recipientEmail,
-        subject: `Invoice ${input.invoiceNumber} from Rico Workshop`,
-        html: input.html,
-        text: input.text,
-        attachments: [
-          {
-            filename: `${input.invoiceNumber}.pdf`,
-            content: Buffer.from(input.pdfBytes),
-            contentType: 'application/pdf',
-          },
-        ],
-      })
-      .then((result: unknown) => {
-        const providerMessageId =
-          result &&
-          typeof result === 'object' &&
-          'messageId' in result &&
-          typeof result.messageId === 'string'
-            ? result.messageId
-            : `smtp-${generateOrderId()}`;
+    if (normalizedTransport === 'RESEND') {
+      return this.getResendClient()
+        .emails.send({
+          from: fromAddress,
+          to: [input.recipientEmail],
+          subject: `Invoice ${input.invoiceNumber} from Rico Workshop`,
+          html: input.html,
+          text: input.text,
+          attachments: [
+            {
+              filename: `${input.invoiceNumber}.pdf`,
+              content: Buffer.from(input.pdfBytes),
+              contentType: 'application/pdf',
+            },
+          ],
+        })
+        .then((result) => {
+          if (result.error) {
+            throw new ServiceUnavailableException(result.error.message);
+          }
 
-        return {
-          provider: 'smtp',
-          providerMessageId,
-        };
-      });
+          return {
+            provider: 'resend',
+            providerMessageId: result.data?.id ?? `resend-${generateOrderId()}`,
+          };
+        });
+    }
+
+    throw new ServiceUnavailableException(
+      'Invoice email transport is not configured for delivery. Configure Resend before sending invoices.',
+    );
   }
 
   private renderInvoiceText(input: {
@@ -1112,6 +1136,50 @@ export class JobInvoiceService implements OnModuleDestroy {
       );
     }
 
+    if (transport === 'RESEND') {
+      blockers.push(...this.getResendRuntimeBlockers());
+    }
+
+    return blockers;
+  }
+
+  private getResendRuntimeBlockers() {
+    const blockers: string[] = [];
+    const apiKey = this.configService.get<string>(
+      'INVOICE_EMAIL_RESEND_API_KEY',
+    );
+    if (!apiKey) {
+      blockers.push(
+        'Invoice Resend transport is incomplete. Configure INVOICE_EMAIL_RESEND_API_KEY before sending invoices.',
+      );
+      return blockers;
+    }
+
+    const fromValue = this.configService.get<string>('INVOICE_EMAIL_FROM');
+    const fromAddress = this.extractMailboxAddress(fromValue);
+
+    if (!fromAddress) {
+      blockers.push(
+        'Invoice Resend transport is incomplete. Configure INVOICE_EMAIL_FROM with a verified sender address before sending invoices.',
+      );
+      return blockers;
+    }
+
+    const fromDomain = fromAddress.split('@')[1]?.toLowerCase();
+    if (!fromDomain) {
+      blockers.push(
+        'Invoice Resend transport is incomplete. Configure INVOICE_EMAIL_FROM with a valid sender address before sending invoices.',
+      );
+      return blockers;
+    }
+
+    if (PUBLIC_MAILBOX_DOMAINS.has(fromDomain)) {
+      blockers.push(
+        `Invoice Resend transport requires a sender address on your verified domain. ${fromAddress} uses ${fromDomain}, which Resend will reject for this setup.`,
+      );
+      return blockers;
+    }
+
     return blockers;
   }
 
@@ -1119,8 +1187,8 @@ export class JobInvoiceService implements OnModuleDestroy {
     const transport = this.configService.get<string>('INVOICE_EMAIL_TRANSPORT');
     const normalized = transport?.toUpperCase();
 
-    if (normalized === 'SMTP') {
-      return 'SMTP';
+    if (normalized === 'RESEND') {
+      return 'RESEND';
     }
     if (normalized === 'LOG') {
       return 'LOG';
@@ -1128,31 +1196,53 @@ export class JobInvoiceService implements OnModuleDestroy {
     return 'DISABLED';
   }
 
-  private getSmtpTransport(): Transporter {
-    if (this.smtpTransport) {
-      return this.smtpTransport;
+  private getInvoiceProviderName() {
+    const transport = this.getInvoiceEmailTransport();
+
+    if (transport === 'RESEND') {
+      return 'resend';
     }
 
-    const host = this.configService.get<string>('INVOICE_EMAIL_SMTP_HOST');
-    const port = this.configService.get<number>('INVOICE_EMAIL_SMTP_PORT');
-    const secure = this.configService.get<boolean>('INVOICE_EMAIL_SMTP_SECURE');
-    const user = this.configService.get<string>('INVOICE_EMAIL_SMTP_USER');
-    const pass = this.configService.get<string>('INVOICE_EMAIL_SMTP_PASS');
+    return transport.toLowerCase();
+  }
 
-    if (!host || !port || secure === undefined) {
+  private getResendClient() {
+    if (this.resendClient) {
+      return this.resendClient;
+    }
+
+    const apiKey = this.configService.get<string>(
+      'INVOICE_EMAIL_RESEND_API_KEY',
+    );
+    if (!apiKey) {
       throw new ServiceUnavailableException(
-        'Invoice SMTP transport is incomplete. Configure host, port, and secure mode before sending invoices.',
+        'Invoice Resend transport is incomplete. Configure INVOICE_EMAIL_RESEND_API_KEY before sending invoices.',
       );
     }
 
-    this.smtpTransport = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: user && pass ? { user, pass } : undefined,
-    });
+    this.resendClient = new Resend(apiKey);
+    return this.resendClient;
+  }
 
-    return this.smtpTransport;
+  private extractMailboxAddress(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    const bareEmailPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+    if (bareEmailPattern.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    const namedEmailMatch = trimmed.match(
+      /^.+?\s*<\s*([^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)\s*>$/,
+    );
+    if (!namedEmailMatch) {
+      return null;
+    }
+
+    return namedEmailMatch[1].toLowerCase();
   }
 
   private asInvoiceErrorMessage(error: unknown) {

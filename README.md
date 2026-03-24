@@ -47,6 +47,23 @@ SUPER_ADMIN_PASSWORD=replace-with-secure-password
 
 `SUPER_ADMIN_*` only matters for `npm run seed:super-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
 
+## Invoice email transport
+
+For production invoice sending, the backend uses Resend.
+
+Recommended configuration:
+
+```env
+INVOICE_EMAIL_TRANSPORT=RESEND
+INVOICE_EMAIL_FROM=Gmb Workshop <billing@gmbworkshop.shop>
+INVOICE_EMAIL_RESEND_API_KEY=re_replace_with_your_resend_api_key
+```
+
+Notes:
+- `INVOICE_EMAIL_FROM` must use a sender address on a verified Resend domain or subdomain.
+- `RESEND_API_KEY` is also accepted as an alias, but `INVOICE_EMAIL_RESEND_API_KEY` is the canonical backend variable.
+- `LOG` and `DISABLED` are still available for non-delivery environments, but production sending is Resend-only.
+
 ## Run the API
 
 ```bash

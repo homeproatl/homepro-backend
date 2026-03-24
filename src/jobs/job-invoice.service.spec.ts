@@ -1,5 +1,4 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import type { SendMailOptions } from 'nodemailer';
 import { renderInvoiceEmailMessageHtml } from './invoice-template';
 import { JobInvoiceService } from './job-invoice.service';
 import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.enum';
@@ -7,6 +6,8 @@ import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.en
 describe('JobInvoiceService', () => {
   function createService(overrides?: {
     jobInvoiceSnapshotModel?: object;
+    jobInvoiceDispatchModel?: object;
+    auditLogModel?: object;
     appSettingsModel?: object;
     configService?: object;
   }) {
@@ -18,9 +19,9 @@ describe('JobInvoiceService', () => {
       {} as never,
       {} as never,
       (overrides?.jobInvoiceSnapshotModel ?? {}) as never,
-      {} as never,
+      (overrides?.jobInvoiceDispatchModel ?? {}) as never,
       (overrides?.appSettingsModel ?? {}) as never,
-      {} as never,
+      (overrides?.auditLogModel ?? {}) as never,
       (overrides?.configService ?? {}) as never,
     );
   }
@@ -171,34 +172,39 @@ describe('JobInvoiceService', () => {
     ).toThrow(ServiceUnavailableException);
   });
 
-  it('uses SMTP transport for real invoice delivery when configured', async () => {
+  it('uses RESEND transport for real invoice delivery when configured', async () => {
     const service = createService({
       configService: {
         get: jest.fn((key: string) => {
           if (key === 'INVOICE_EMAIL_TRANSPORT') {
-            return 'SMTP';
+            return 'RESEND';
           }
 
           if (key === 'INVOICE_EMAIL_FROM') {
-            return 'billing@rico.local';
+            return 'Gmb Workshop <billing@gmbworkshop.shop>';
+          }
+
+          if (key === 'INVOICE_EMAIL_RESEND_API_KEY') {
+            return 're_test_123';
           }
 
           return undefined;
         }),
       },
     });
-    const sendMail = jest
-      .fn<Promise<{ messageId: string }>, [SendMailOptions]>()
-      .mockResolvedValue({ messageId: 'smtp-message-1' });
+    const send = jest.fn().mockResolvedValue({
+      data: { id: 'resend-message-1' },
+      error: null,
+    });
 
     jest
       .spyOn(
         service as unknown as {
-          getSmtpTransport: () => { sendMail: typeof sendMail };
+          getResendClient: () => { emails: { send: typeof send } };
         },
-        'getSmtpTransport',
+        'getResendClient',
       )
-      .mockReturnValue({ sendMail });
+      .mockReturnValue({ emails: { send } });
 
     await expect(
       (
@@ -219,14 +225,14 @@ describe('JobInvoiceService', () => {
         pdfBytes: Uint8Array.of(1, 2, 3),
       }),
     ).resolves.toEqual({
-      provider: 'smtp',
-      providerMessageId: 'smtp-message-1',
+      provider: 'resend',
+      providerMessageId: 'resend-message-1',
     });
 
-    expect(sendMail).toHaveBeenCalledWith(
+    expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'billing@rico.local',
-        to: 'customer@test.com',
+        from: 'Gmb Workshop <billing@gmbworkshop.shop>',
+        to: ['customer@test.com'],
         subject: 'Invoice INV-123456 from Rico Workshop',
         attachments: [
           expect.objectContaining({
@@ -235,12 +241,6 @@ describe('JobInvoiceService', () => {
           }),
         ],
       }),
-    );
-
-    const mailPayload = sendMail.mock.calls[0]?.[0];
-    expect(mailPayload?.html).toContain('Invoice Attached');
-    expect(mailPayload?.text).toContain(
-      'Please open the attached PDF to review the complete invoice details.',
     );
   });
 
@@ -466,11 +466,15 @@ describe('JobInvoiceService', () => {
       configService: {
         get: jest.fn((key: string) => {
           if (key === 'INVOICE_EMAIL_TRANSPORT') {
-            return 'SMTP';
+            return 'RESEND';
           }
 
           if (key === 'INVOICE_EMAIL_FROM') {
-            return 'billing@rico.local';
+            return 'Gmb Workshop <billing@gmbworkshop.shop>';
+          }
+
+          if (key === 'INVOICE_EMAIL_RESEND_API_KEY') {
+            return 're_test_123';
           }
 
           return undefined;
@@ -516,6 +520,176 @@ describe('JobInvoiceService', () => {
     expect(result.pdf_blockers).toEqual([pdfBlocker]);
     expect(result.send_ready).toBe(false);
     expect(result.send_blockers).toContain(pdfBlocker);
+  });
+
+  it('reports send_ready as false when the Resend sender uses a personal mailbox domain', async () => {
+    const service = createService({
+      configService: {
+        get: jest.fn((key: string) => {
+          if (key === 'INVOICE_EMAIL_TRANSPORT') {
+            return 'RESEND';
+          }
+
+          if (key === 'INVOICE_EMAIL_FROM') {
+            return 'Rico Workshop <jibola619@gmail.com>';
+          }
+
+          if (key === 'INVOICE_EMAIL_RESEND_API_KEY') {
+            return 're_test_123';
+          }
+
+          return undefined;
+        }),
+      },
+    });
+    const aggregate = {
+      job: { _id: 'job-1' },
+      blockers: [],
+      payload: createInvoicePayload(),
+    };
+
+    jest
+      .spyOn(
+        service as unknown as {
+          loadInvoiceAggregate: (jobId: string) => Promise<typeof aggregate>;
+        },
+        'loadInvoiceAggregate',
+      )
+      .mockResolvedValue(aggregate as never);
+    jest
+      .spyOn(
+        service as unknown as {
+          reconcileLatestSnapshot: (aggregate: unknown) => Promise<null>;
+        },
+        'reconcileLatestSnapshot',
+      )
+      .mockResolvedValue(null);
+    jest
+      .spyOn(
+        service as unknown as {
+          getPdfBlockers: () => Promise<string[]>;
+        },
+        'getPdfBlockers',
+      )
+      .mockResolvedValue([]);
+
+    const result = await service.getInvoicePreview('job-1');
+
+    expect(result.send_ready).toBe(false);
+    expect(result.send_blockers).toContain(
+      'Invoice Resend transport requires a sender address on your verified domain. jibola619@gmail.com uses gmail.com, which Resend will reject for this setup.',
+    );
+  });
+
+  it('does not require Resend domain-list access to mark a verified-domain sender as ready', async () => {
+    const service = createService({
+      configService: {
+        get: jest.fn((key: string) => {
+          if (key === 'INVOICE_EMAIL_TRANSPORT') {
+            return 'RESEND';
+          }
+
+          if (key === 'INVOICE_EMAIL_FROM') {
+            return 'Gmb Workshop <billing@gmbworkshop.shop>';
+          }
+
+          if (key === 'INVOICE_EMAIL_RESEND_API_KEY') {
+            return 're_test_123';
+          }
+
+          return undefined;
+        }),
+      },
+    });
+    const aggregate = {
+      job: { _id: 'job-1' },
+      blockers: [],
+      payload: createInvoicePayload(),
+    };
+
+    jest
+      .spyOn(
+        service as unknown as {
+          loadInvoiceAggregate: (jobId: string) => Promise<typeof aggregate>;
+        },
+        'loadInvoiceAggregate',
+      )
+      .mockResolvedValue(aggregate as never);
+    jest
+      .spyOn(
+        service as unknown as {
+          reconcileLatestSnapshot: (aggregate: unknown) => Promise<null>;
+        },
+        'reconcileLatestSnapshot',
+      )
+      .mockResolvedValue(null);
+    jest
+      .spyOn(
+        service as unknown as {
+          getPdfBlockers: () => Promise<string[]>;
+        },
+        'getPdfBlockers',
+      )
+      .mockResolvedValue([]);
+
+    const result = await service.getInvoicePreview('job-1');
+
+    expect(result.send_ready).toBe(true);
+    expect(result.send_blockers).toEqual([]);
+  });
+
+  it('stops sendInvoice before creating a dispatch when runtime transport blockers exist', async () => {
+    const dispatchCreate = jest.fn();
+    const service = createService({
+      jobInvoiceDispatchModel: {
+        create: dispatchCreate,
+      },
+    });
+    const aggregate = {
+      job: { _id: 'job-1' },
+      blockers: [],
+      payload: createInvoicePayload(),
+      customer: {
+        email: 'customer@test.com',
+        first_name: 'Rico',
+        last_name: 'Customer',
+      },
+    };
+    const resolveIssueableSnapshot = jest.spyOn(
+      service as unknown as {
+        resolveIssueableSnapshot: (aggregate: unknown) => Promise<unknown>;
+      },
+      'resolveIssueableSnapshot',
+    );
+
+    jest
+      .spyOn(
+        service as unknown as {
+          loadInvoiceAggregate: (jobId: string) => Promise<typeof aggregate>;
+        },
+        'loadInvoiceAggregate',
+      )
+      .mockResolvedValue(aggregate as never);
+    jest
+      .spyOn(
+        service as unknown as {
+          getGlobalInvoiceRuntimeReadiness: () => Promise<{
+            pdfBlockers: string[];
+            sendBlockers: string[];
+          }>;
+        },
+        'getGlobalInvoiceRuntimeReadiness',
+      )
+      .mockResolvedValue({
+        pdfBlockers: [],
+        sendBlockers: ['Invoice email transport is disabled.'],
+      });
+
+    await expect(service.sendInvoice('job-1')).rejects.toThrow(
+      'Invoice email transport is disabled.',
+    );
+    expect(resolveIssueableSnapshot).not.toHaveBeenCalled();
+    expect(dispatchCreate).not.toHaveBeenCalled();
   });
 
   it('resets the cached PDF browser after renderer failures so the next request can relaunch', async () => {

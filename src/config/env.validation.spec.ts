@@ -144,48 +144,74 @@ describe('validateEnv', () => {
     expect(env.SUPER_ADMIN_PASSWORD).toBeUndefined();
   });
 
-  it('accepts SMTP transport configuration when fully provided', () => {
+  it('accepts RESEND transport configuration when fully provided', () => {
     const env = validateEnv({
       NODE_ENV: 'production',
       APP_PORT: '4000',
       MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
-      BUSINESS_TIMEZONE: 'America/New_York',
       JWT_ACCESS_SECRET: 'access-secret',
       JWT_REFRESH_SECRET: 'refresh-secret',
       JWT_ACCESS_TTL: '15m',
       JWT_REFRESH_TTL: '7d',
-      INVOICE_EMAIL_TRANSPORT: 'SMTP',
-      INVOICE_EMAIL_FROM: 'billing@rico.local',
-      INVOICE_EMAIL_SMTP_HOST: 'smtp.example.com',
-      INVOICE_EMAIL_SMTP_PORT: '587',
-      INVOICE_EMAIL_SMTP_SECURE: 'false',
-      INVOICE_EMAIL_SMTP_USER: 'smtp-user',
-      INVOICE_EMAIL_SMTP_PASS: 'smtp-pass',
+      INVOICE_EMAIL_TRANSPORT: 'RESEND',
+      INVOICE_EMAIL_FROM: 'Gmb Workshop <billing@updates.rico.example>',
+      INVOICE_EMAIL_RESEND_API_KEY: 're_test_123',
     });
 
-    expect(env.INVOICE_EMAIL_TRANSPORT).toBe('SMTP');
-    expect(env.INVOICE_EMAIL_SMTP_HOST).toBe('smtp.example.com');
-    expect(env.INVOICE_EMAIL_SMTP_PORT).toBe(587);
-    expect(env.INVOICE_EMAIL_SMTP_SECURE).toBe(false);
+    expect(env.INVOICE_EMAIL_TRANSPORT).toBe('RESEND');
+    expect(env.INVOICE_EMAIL_FROM).toBe(
+      'Gmb Workshop <billing@updates.rico.example>',
+    );
+    expect(env.INVOICE_EMAIL_RESEND_API_KEY).toBe('re_test_123');
   });
 
-  it('rejects partial SMTP configuration', () => {
+  it('supports RESEND_API_KEY as an alias for INVOICE_EMAIL_RESEND_API_KEY', () => {
+    const env = validateEnv({
+      NODE_ENV: 'production',
+      APP_PORT: '4000',
+      MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
+      JWT_ACCESS_SECRET: 'access-secret',
+      JWT_REFRESH_SECRET: 'refresh-secret',
+      JWT_ACCESS_TTL: '15m',
+      JWT_REFRESH_TTL: '7d',
+      INVOICE_EMAIL_TRANSPORT: 'RESEND',
+      INVOICE_EMAIL_FROM: 'billing@updates.rico.example',
+      RESEND_API_KEY: 're_alias_123',
+    });
+
+    expect(env.INVOICE_EMAIL_RESEND_API_KEY).toBe('re_alias_123');
+  });
+
+  it('rejects removed SMTP transport configuration', () => {
     expect(() =>
       validateEnv({
         NODE_ENV: 'production',
         APP_PORT: '4000',
         MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
-        BUSINESS_TIMEZONE: 'America/New_York',
         JWT_ACCESS_SECRET: 'access-secret',
         JWT_REFRESH_SECRET: 'refresh-secret',
         JWT_ACCESS_TTL: '15m',
         JWT_REFRESH_TTL: '7d',
         INVOICE_EMAIL_TRANSPORT: 'SMTP',
-        INVOICE_EMAIL_FROM: 'billing@rico.local',
-        INVOICE_EMAIL_SMTP_HOST: 'smtp.example.com',
+      }),
+    ).toThrow('INVOICE_EMAIL_TRANSPORT must be LOG, DISABLED, or RESEND');
+  });
+
+  it('rejects partial RESEND configuration', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        APP_PORT: '4000',
+        MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
+        JWT_ACCESS_SECRET: 'access-secret',
+        JWT_REFRESH_SECRET: 'refresh-secret',
+        JWT_ACCESS_TTL: '15m',
+        JWT_REFRESH_TTL: '7d',
+        INVOICE_EMAIL_TRANSPORT: 'RESEND',
+        INVOICE_EMAIL_FROM: 'billing@updates.rico.example',
       }),
     ).toThrow(
-      'INVOICE_EMAIL_SMTP_PORT is required when INVOICE_EMAIL_TRANSPORT is SMTP',
+      'INVOICE_EMAIL_RESEND_API_KEY is required when INVOICE_EMAIL_TRANSPORT is RESEND',
     );
   });
 });

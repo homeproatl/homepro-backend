@@ -5,11 +5,7 @@ type AppEnv = {
   FRONTEND_ORIGIN?: string;
   INVOICE_EMAIL_TRANSPORT?: string;
   INVOICE_EMAIL_FROM?: string;
-  INVOICE_EMAIL_SMTP_HOST?: string;
-  INVOICE_EMAIL_SMTP_PORT?: number;
-  INVOICE_EMAIL_SMTP_SECURE?: boolean;
-  INVOICE_EMAIL_SMTP_USER?: string;
-  INVOICE_EMAIL_SMTP_PASS?: string;
+  INVOICE_EMAIL_RESEND_API_KEY?: string;
   JWT_ACCESS_SECRET: string;
   JWT_REFRESH_SECRET: string;
   JWT_ACCESS_TTL: string;
@@ -124,9 +120,9 @@ function optionalInvoiceTransport(
   if (
     normalized !== 'LOG' &&
     normalized !== 'DISABLED' &&
-    normalized !== 'SMTP'
+    normalized !== 'RESEND'
   ) {
-    throw new Error('INVOICE_EMAIL_TRANSPORT must be LOG, DISABLED, or SMTP');
+    throw new Error('INVOICE_EMAIL_TRANSPORT must be LOG, DISABLED, or RESEND');
   }
 
   return normalized;
@@ -142,69 +138,30 @@ function optionalEmailAddress(
     return undefined;
   }
 
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(value)) {
+  const trimmed = value.trim();
+  const bareEmailPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+  if (bareEmailPattern.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+
+  const namedEmailMatch = trimmed.match(
+    /^(.+?)\s*<\s*([^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)\s*>$/,
+  );
+  if (!namedEmailMatch) {
     throw new Error(`${key} must be a valid email address`);
   }
 
-  return value.toLowerCase();
+  const [, displayName, address] = namedEmailMatch;
+  return `${displayName.trim()} <${address.toLowerCase()}>`;
 }
 
-function optionalSmtpHost(env: NodeJS.ProcessEnv) {
-  const value = env.INVOICE_EMAIL_SMTP_HOST;
+function optionalResendApiKey(env: NodeJS.ProcessEnv) {
+  const value = env.INVOICE_EMAIL_RESEND_API_KEY ?? env.RESEND_API_KEY;
   if (!value) {
     return undefined;
   }
 
   return value.trim();
-}
-
-function optionalSmtpPort(env: NodeJS.ProcessEnv) {
-  const value = env.INVOICE_EMAIL_SMTP_PORT;
-  if (!value) {
-    return undefined;
-  }
-
-  const port = Number.parseInt(value, 10);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(
-      'INVOICE_EMAIL_SMTP_PORT must be an integer between 1 and 65535',
-    );
-  }
-
-  return port;
-}
-
-function optionalSmtpSecure(env: NodeJS.ProcessEnv) {
-  const value = env.INVOICE_EMAIL_SMTP_SECURE;
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === 'true') {
-    return true;
-  }
-
-  if (value === 'false') {
-    return false;
-  }
-
-  throw new Error('INVOICE_EMAIL_SMTP_SECURE must be true or false');
-}
-
-function optionalSmtpCredential(
-  env: NodeJS.ProcessEnv,
-  key: keyof Pick<
-    AppEnv,
-    'INVOICE_EMAIL_SMTP_USER' | 'INVOICE_EMAIL_SMTP_PASS'
-  >,
-) {
-  const value = env[key];
-  if (!value) {
-    return undefined;
-  }
-
-  return value;
 }
 
 function optionalEnvValue(
@@ -246,39 +203,20 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
     'INVOICE_EMAIL_FROM',
     defaults.INVOICE_EMAIL_FROM,
   );
-  const smtpHost = optionalSmtpHost(env);
-  const smtpPort = optionalSmtpPort(env);
-  const smtpSecure = optionalSmtpSecure(env);
-  const smtpUser = optionalSmtpCredential(env, 'INVOICE_EMAIL_SMTP_USER');
-  const smtpPass = optionalSmtpCredential(env, 'INVOICE_EMAIL_SMTP_PASS');
+  const resendApiKey = optionalResendApiKey(env);
 
-  if (invoiceTransport === 'SMTP') {
+  if (invoiceTransport === 'RESEND') {
     if (!invoiceEmailFrom) {
       throw new Error(
-        'INVOICE_EMAIL_FROM is required when INVOICE_EMAIL_TRANSPORT is SMTP',
+        'INVOICE_EMAIL_FROM is required when INVOICE_EMAIL_TRANSPORT is RESEND',
       );
     }
-    if (!smtpHost) {
-      throw new Error(
-        'INVOICE_EMAIL_SMTP_HOST is required when INVOICE_EMAIL_TRANSPORT is SMTP',
-      );
-    }
-    if (!smtpPort) {
-      throw new Error(
-        'INVOICE_EMAIL_SMTP_PORT is required when INVOICE_EMAIL_TRANSPORT is SMTP',
-      );
-    }
-    if (smtpSecure === undefined) {
-      throw new Error(
-        'INVOICE_EMAIL_SMTP_SECURE is required when INVOICE_EMAIL_TRANSPORT is SMTP',
-      );
-    }
-  }
 
-  if ((smtpUser && !smtpPass) || (!smtpUser && smtpPass)) {
-    throw new Error(
-      'INVOICE_EMAIL_SMTP_USER and INVOICE_EMAIL_SMTP_PASS must be provided together',
-    );
+    if (!resendApiKey) {
+      throw new Error(
+        'INVOICE_EMAIL_RESEND_API_KEY is required when INVOICE_EMAIL_TRANSPORT is RESEND',
+      );
+    }
   }
 
   return {
@@ -288,11 +226,7 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
     FRONTEND_ORIGIN: optionalOrigin(env, defaults.FRONTEND_ORIGIN),
     INVOICE_EMAIL_TRANSPORT: invoiceTransport,
     INVOICE_EMAIL_FROM: invoiceEmailFrom,
-    INVOICE_EMAIL_SMTP_HOST: smtpHost,
-    INVOICE_EMAIL_SMTP_PORT: smtpPort,
-    INVOICE_EMAIL_SMTP_SECURE: smtpSecure,
-    INVOICE_EMAIL_SMTP_USER: smtpUser,
-    INVOICE_EMAIL_SMTP_PASS: smtpPass,
+    INVOICE_EMAIL_RESEND_API_KEY: resendApiKey,
     JWT_ACCESS_SECRET: requiredValue(
       'JWT_ACCESS_SECRET',
       env,
