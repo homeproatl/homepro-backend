@@ -1,3 +1,8 @@
+import {
+  INVOICE_LOGO_CONTENT_ID,
+  INVOICE_LOGO_DATA_URL,
+} from './invoice-logo';
+
 export type InvoiceDocumentLineItem = {
   description: string;
   quantity: number;
@@ -33,9 +38,6 @@ export type InvoiceEmailMessageModel = {
   dueDate: string | null;
   timeZone: string;
 };
-
-const INVOICE_LOGO_URL =
-  'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg';
 
 function escapeHtml(value: string) {
   return value
@@ -75,14 +77,19 @@ function formatPaymentStatusLabel(value: string) {
 }
 
 function renderInvoiceLogo(input: {
+  src: string;
   alt: string;
   maxWidth: number;
   marginBottom: number;
 }) {
-  return `<img src="${INVOICE_LOGO_URL}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
+  return `<img src="${escapeHtml(input.src)}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
 }
 
-export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
+export function renderInvoiceDocumentHtml(
+  invoice: InvoiceDocumentModel,
+  options: { logoSrc?: string } = {},
+) {
+  const logoSrc = options.logoSrc ?? INVOICE_LOGO_DATA_URL;
   const paymentStatusLabel = formatPaymentStatusLabel(invoice.paymentStatus);
   const servicesRows = invoice.services
     .map(
@@ -166,6 +173,7 @@ export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
               <tr>
                 <td class="invoice-header-left" style="vertical-align:top;padding:0 24px 0 0;">
                   ${renderInvoiceLogo({
+                    src: logoSrc,
                     alt: 'Gmb Workshop',
                     maxWidth: 260,
                     marginBottom: 8,
@@ -286,7 +294,9 @@ export function renderInvoiceDocumentHtml(invoice: InvoiceDocumentModel) {
 
 export function renderInvoiceEmailMessageHtml(
   message: InvoiceEmailMessageModel,
+  options: { logoSrc?: string } = {},
 ) {
+  const logoSrc = options.logoSrc ?? `cid:${INVOICE_LOGO_CONTENT_ID}`;
   const customerName = escapeHtml(message.customerName.trim() || 'Customer');
   const dueDate = escapeHtml(formatDate(message.dueDate, message.timeZone));
   const amountDue = escapeHtml(formatCurrency(message.total));
@@ -303,6 +313,7 @@ export function renderInvoiceEmailMessageHtml(
   <body style="margin:0;padding:24px;background:#f8fafc;color:#111827;font-family:Helvetica,Arial,sans-serif;">
     <div style="margin:0 auto;max-width:640px;border:1px solid #e4e4e7;border-radius:8px;background:#ffffff;padding:32px;">
       ${renderInvoiceLogo({
+        src: logoSrc,
         alt: 'Gmb Workshop',
         maxWidth: 220,
         marginBottom: 8,
@@ -319,6 +330,7 @@ export function renderInvoiceEmailMessageHtml(
       <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">If you have any questions, please contact us and we will be happy to assist.</p>
       <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Kind regards,</p>
       ${renderInvoiceLogo({
+        src: logoSrc,
         alt: 'Gmb Workshop',
         maxWidth: 180,
         marginBottom: 0,

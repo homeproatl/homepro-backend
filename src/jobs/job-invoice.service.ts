@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -17,6 +18,10 @@ import {
   renderInvoiceEmailMessageHtml,
   renderInvoiceDocumentHtml,
 } from './invoice-template';
+import {
+  INVOICE_LOGO_BUFFER,
+  INVOICE_LOGO_CONTENT_ID,
+} from './invoice-logo';
 import { generateOrderId } from '../common/utils/order-id';
 import { asObjectId } from '../common/utils/object-id';
 import {
@@ -166,6 +171,8 @@ const PUBLIC_MAILBOX_DOMAINS = new Set([
   'aol.com',
 ]);
 
+const RECENT_INVOICE_DISPATCH_WINDOW_MS = 2 * 60 * 1000;
+
 @Injectable()
 export class JobInvoiceService implements OnModuleDestroy {
   private readonly logger = new Logger(JobInvoiceService.name);
@@ -314,17 +321,59 @@ export class JobInvoiceService implements OnModuleDestroy {
       aggregate,
       actorUserId,
     );
+    const latestDispatch = await this.getLatestDispatchForSnapshot(snapshot._id);
+    if (latestDispatch && this.isRecentDispatch(latestDispatch)) {
+      if (latestDispatch.delivery_status === JobInvoiceDispatchStatus.PENDING) {
+        throw new ConflictException(
+          'Invoice sending is already in progress for this revision. Please wait a moment before retrying.',
+        );
+      }
+
+      if (this.isAcceptedDispatchStatus(latestDispatch.delivery_status)) {
+        return {
+          ready: true,
+          blockers: [],
+          needs_refresh: false,
+          snapshot: this.serializeSnapshot(snapshot),
+          dispatch: this.serializeDispatch(latestDispatch),
+        };
+      }
+    }
+
     const invoiceProvider = this.getInvoiceProviderName();
-    const dispatch = await this.jobInvoiceDispatchModel.create({
-      job_id: snapshot.job_id,
-      invoice_snapshot_id: snapshot._id,
-      recipient_email: aggregate.customer.email?.toLowerCase(),
-      provider: invoiceProvider,
-      provider_message_id: null,
-      delivery_status: JobInvoiceDispatchStatus.PENDING,
-      error_message: null,
-      sent_at: null,
-    });
+    const reusableDispatch = this.canReuseDispatchForIdempotentRetry(
+      latestDispatch,
+    )
+      ? latestDispatch
+      : null;
+    const dispatch: JobInvoiceDispatchDocument = reusableDispatch
+      ? reusableDispatch
+      : await this.jobInvoiceDispatchModel.create({
+          job_id: snapshot.job_id,
+          invoice_snapshot_id: snapshot._id,
+          recipient_email: aggregate.customer.email?.toLowerCase(),
+          provider: invoiceProvider,
+          provider_message_id: null,
+          provider_request_key: this.createInvoiceDispatchRequestKey(
+            snapshot._id,
+          ),
+          delivery_status: JobInvoiceDispatchStatus.PENDING,
+          error_message: null,
+          sent_at: null,
+        });
+
+    if (reusableDispatch) {
+      dispatch.recipient_email = aggregate.customer.email?.toLowerCase() ?? '';
+      dispatch.provider = invoiceProvider;
+      dispatch.provider_message_id = null;
+      dispatch.provider_request_key =
+        dispatch.provider_request_key ??
+        this.createInvoiceDispatchRequestKey(snapshot._id);
+      dispatch.delivery_status = JobInvoiceDispatchStatus.PENDING;
+      dispatch.error_message = null;
+      dispatch.sent_at = null;
+      await dispatch.save();
+    }
 
     try {
       const renderPayload = this.serializeSnapshot(snapshot);
@@ -352,16 +401,19 @@ export class JobInvoiceService implements OnModuleDestroy {
           timeZone: emailMessage.timeZone,
         }),
         pdfBytes,
+        idempotencyKey:
+          dispatch.provider_request_key ??
+          this.createInvoiceDispatchRequestKey(snapshot._id),
       });
       const sentAt = new Date();
       dispatch.provider = result.provider;
       dispatch.provider_message_id = result.providerMessageId;
-      dispatch.delivery_status = JobInvoiceDispatchStatus.SENT;
+      dispatch.delivery_status = JobInvoiceDispatchStatus.ACCEPTED;
       dispatch.error_message = null;
       dispatch.sent_at = sentAt;
       await dispatch.save();
 
-      snapshot.status = JobInvoiceSnapshotStatus.SENT;
+      snapshot.status = JobInvoiceSnapshotStatus.ACCEPTED;
       snapshot.sent_at = sentAt;
       await snapshot.save();
 
@@ -619,6 +671,7 @@ export class JobInvoiceService implements OnModuleDestroy {
 
     const isBillableSnapshot =
       latestSnapshot.status === JobInvoiceSnapshotStatus.ISSUED ||
+      latestSnapshot.status === JobInvoiceSnapshotStatus.ACCEPTED ||
       latestSnapshot.status === JobInvoiceSnapshotStatus.SENT;
 
     if (
@@ -798,6 +851,7 @@ export class JobInvoiceService implements OnModuleDestroy {
     html: string;
     text: string;
     pdfBytes: Uint8Array;
+    idempotencyKey: string;
   }): Promise<InvoiceEmailResult> {
     const normalizedTransport = this.getInvoiceEmailTransport();
     const fromAddress =
@@ -836,7 +890,15 @@ export class JobInvoiceService implements OnModuleDestroy {
               content: Buffer.from(input.pdfBytes),
               contentType: 'application/pdf',
             },
+            {
+              filename: 'invoice-logo.jpg',
+              content: INVOICE_LOGO_BUFFER,
+              contentType: 'image/jpeg',
+              contentId: INVOICE_LOGO_CONTENT_ID,
+            },
           ],
+        }, {
+          idempotencyKey: input.idempotencyKey,
         })
         .then((result) => {
           if (result.error) {
@@ -976,6 +1038,60 @@ export class JobInvoiceService implements OnModuleDestroy {
 
   private renderInvoiceHtml(invoice: InvoiceRenderPayload) {
     return renderInvoiceDocumentHtml(this.toInvoiceDocumentModel(invoice));
+  }
+
+  private async getLatestDispatchForSnapshot(snapshotId: JobInvoiceSnapshotDocument['_id']) {
+    return this.jobInvoiceDispatchModel
+      .findOne({ invoice_snapshot_id: snapshotId })
+      .sort({ created_at: -1 })
+      .exec();
+  }
+
+  private createInvoiceDispatchRequestKey(
+    snapshotId: JobInvoiceSnapshotDocument['_id'],
+  ) {
+    return `invoice:${String(snapshotId)}:${generateOrderId()}`;
+  }
+
+  private isRecentDispatch(dispatch: Pick<JobInvoiceDispatchDocument, 'created_at' | 'updated_at'>) {
+    const relevantDate = dispatch.created_at ?? dispatch.updated_at;
+    if (!(relevantDate instanceof Date)) {
+      return false;
+    }
+
+    return Date.now() - relevantDate.getTime() < RECENT_INVOICE_DISPATCH_WINDOW_MS;
+  }
+
+  private isAcceptedDispatchStatus(status: JobInvoiceDispatchStatus) {
+    return (
+      status === JobInvoiceDispatchStatus.ACCEPTED ||
+      status === JobInvoiceDispatchStatus.SENT
+    );
+  }
+
+  private canReuseDispatchForIdempotentRetry(
+    dispatch: JobInvoiceDispatchDocument | null,
+  ) {
+    return Boolean(
+      dispatch &&
+        this.isRecentDispatch(dispatch) &&
+        dispatch.delivery_status === JobInvoiceDispatchStatus.FAILED &&
+        this.isIndeterminateDispatchError(dispatch.error_message),
+    );
+  }
+
+  private isIndeterminateDispatchError(message: string | null | undefined) {
+    if (!message) {
+      return false;
+    }
+
+    return (
+      /unable to fetch data/i.test(message) ||
+      /request could not be resolved/i.test(message) ||
+      /fetch failed/i.test(message) ||
+      /timeout/i.test(message) ||
+      /timed out/i.test(message)
+    );
   }
 
   private async getPdfBrowser() {

@@ -39,6 +39,9 @@ export class JobInvoiceDispatch {
   @Prop({ type: String, default: null })
   provider_message_id!: string | null;
 
+  @Prop({ type: String, default: null })
+  provider_request_key!: string | null;
+
   @Prop({
     type: String,
     required: true,

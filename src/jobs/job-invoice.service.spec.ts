@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { renderInvoiceEmailMessageHtml } from './invoice-template';
+import { JobInvoiceDispatchStatus } from './enums/job-invoice-dispatch-status.enum';
 import { JobInvoiceService } from './job-invoice.service';
 import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.enum';
 
@@ -160,6 +161,7 @@ describe('JobInvoiceService', () => {
             html: string;
             text: string;
             pdfBytes: Uint8Array;
+            idempotencyKey: string;
           }) => Promise<void>;
         }
       ).sendInvoiceEmail({
@@ -168,6 +170,7 @@ describe('JobInvoiceService', () => {
         html: '<html></html>',
         text: 'Invoice text',
         pdfBytes: Uint8Array.of(1, 2, 3),
+        idempotencyKey: 'invoice:inv-1:retry-1',
       }),
     ).toThrow(ServiceUnavailableException);
   });
@@ -215,6 +218,7 @@ describe('JobInvoiceService', () => {
             html: string;
             text: string;
             pdfBytes: Uint8Array;
+            idempotencyKey: string;
           }) => Promise<{ provider: string; providerMessageId: string }>;
         }
       ).sendInvoiceEmail({
@@ -223,6 +227,7 @@ describe('JobInvoiceService', () => {
         html: '<html><body>Invoice Attached</body></html>',
         text: 'Dear Rico Customer,\n\nPlease open the attached PDF to review the complete invoice details.',
         pdfBytes: Uint8Array.of(1, 2, 3),
+        idempotencyKey: 'invoice:inv-1:retry-1',
       }),
     ).resolves.toEqual({
       provider: 'resend',
@@ -239,8 +244,14 @@ describe('JobInvoiceService', () => {
             filename: 'INV-123456.pdf',
             contentType: 'application/pdf',
           }),
+          expect.objectContaining({
+            filename: 'invoice-logo.jpg',
+            contentType: 'image/jpeg',
+            contentId: 'invoice-logo@gmbworkshop',
+          }),
         ],
       }),
+      { idempotencyKey: 'invoice:inv-1:retry-1' },
     );
   });
 
@@ -258,6 +269,41 @@ describe('JobInvoiceService', () => {
     ).toBe(
       'Invoice sending could not reach Resend. Check the Resend API key, sender domain setup, and outbound network access, then try again.',
     );
+  });
+
+  it('reuses recent indeterminate dispatch failures for an idempotent retry', () => {
+    const service = createService();
+
+    expect(
+      (
+        service as unknown as {
+          canReuseDispatchForIdempotentRetry: (dispatch: unknown) => boolean;
+        }
+      ).canReuseDispatchForIdempotentRetry({
+        delivery_status: JobInvoiceDispatchStatus.FAILED,
+        error_message:
+          'Invoice sending timed out while waiting for Resend. Check the Resend configuration or provider availability, then try again.',
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+    ).toBe(true);
+  });
+
+  it('does not reuse deterministic provider failures for idempotent retries', () => {
+    const service = createService();
+
+    expect(
+      (
+        service as unknown as {
+          canReuseDispatchForIdempotentRetry: (dispatch: unknown) => boolean;
+        }
+      ).canReuseDispatchForIdempotentRetry({
+        delivery_status: JobInvoiceDispatchStatus.FAILED,
+        error_message: 'Resend sender domain is not verified.',
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+    ).toBe(false);
   });
 
   it('uses the live preview document for PDF download when the latest snapshot is stale', async () => {
@@ -385,7 +431,7 @@ describe('JobInvoiceService', () => {
     });
   });
 
-  it('renders the invoice email HTML with the public preview layout structure', () => {
+  it('renders the invoice email HTML with the embedded logo and preview layout structure', () => {
     const service = createService();
 
     const html = (
@@ -400,9 +446,7 @@ describe('JobInvoiceService', () => {
     expect(html).toContain('Parts Used');
     expect(html).toContain('Service &amp; Repair Billing');
     expect(html).toContain('Payment Status Unpaid');
-    expect(html).toContain(
-      'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg',
-    );
+    expect(html).toContain('data:image/jpeg;base64,');
     expect(html).toContain(
       'This invoice reflects the billing snapshot and payment status captured for this job.',
     );
@@ -419,9 +463,7 @@ describe('JobInvoiceService', () => {
     });
 
     expect(html).toContain('Invoice Attached');
-    expect(html).toContain(
-      'https://www.gmbworkshop.shop/brand/gmb-workshop-logo.jpg',
-    );
+    expect(html).toContain('cid:invoice-logo@gmbworkshop');
     expect(html).toContain('Thank you for your business.');
     expect(html).toContain('Kind regards,');
     expect(html).toContain(
