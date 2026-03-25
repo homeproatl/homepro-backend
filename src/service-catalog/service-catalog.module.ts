@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AuthModule } from '../auth/auth.module';
 import { JobService, JobServiceSchema } from '../jobs/schemas/job-service.schema';
 import {
   ServiceCatalog,
@@ -9,19 +8,17 @@ import {
 } from './schemas/service-catalog.schema';
 import { ServiceCatalogService } from './service-catalog.service';
 import { ServiceCatalogController } from './service-catalog.controller';
-import { AuthGuard } from '../auth/guards/auth.guard';
 
 @Module({
   imports: [
-    ConfigModule,
-    JwtModule.register({}),
+    AuthModule,
     MongooseModule.forFeature([
       { name: ServiceCatalog.name, schema: ServiceCatalogSchema },
       { name: JobService.name, schema: JobServiceSchema },
     ]),
   ],
   controllers: [ServiceCatalogController],
-  providers: [ServiceCatalogService, AuthGuard],
+  providers: [ServiceCatalogService],
   exports: [ServiceCatalogService, MongooseModule],
 })
 export class ServiceCatalogModule {}

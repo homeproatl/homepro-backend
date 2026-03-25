@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
   AuditLog,
   AuditLogSchema,
 } from '../audit-logs/schemas/audit-log.schema';
+import { AuthModule } from '../auth/auth.module';
 import { Job, JobSchema } from '../jobs/schemas/job.schema';
-import { AuthGuard } from '../auth/guards/auth.guard';
 import { Vehicle, VehicleSchema } from '../vehicles/schemas/vehicle.schema';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
@@ -15,8 +13,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
 
 @Module({
   imports: [
-    ConfigModule,
-    JwtModule.register({}),
+    AuthModule,
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
       { name: Vehicle.name, schema: VehicleSchema },
@@ -25,7 +22,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     ]),
   ],
   controllers: [CustomersController],
-  providers: [CustomersService, AuthGuard],
+  providers: [CustomersService],
   exports: [CustomersService],
 })
 export class CustomersModule {}
