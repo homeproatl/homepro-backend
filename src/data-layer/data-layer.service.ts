@@ -76,10 +76,20 @@ export class DataLayerService {
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
+    if (customer.is_archived === true) {
+      throw new BadRequestException(
+        'Archived customers cannot be assigned to new jobs.',
+      );
+    }
 
     const vehicle = await this.vehicleModel.findById(input.vehicle_id).exec();
     if (!vehicle) {
       throw new NotFoundException('Vehicle not found');
+    }
+    if (vehicle.is_archived === true) {
+      throw new BadRequestException(
+        'Archived vehicles cannot be assigned to new jobs.',
+      );
     }
 
     if (

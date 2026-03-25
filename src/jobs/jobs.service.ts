@@ -216,6 +216,25 @@ export class JobsService {
       );
     }
 
+    const [partCount, serviceCount] = await Promise.all([
+      this.jobPartModel.countDocuments({ job_id: job._id }).exec(),
+      this.jobServiceModel.countDocuments({ job_id: job._id }).exec(),
+    ]);
+
+    const canHardDelete =
+      partCount === 0 &&
+      serviceCount === 0 &&
+      job.payment_status === PaidStatus.UNPAID &&
+      [JobStatus.SCHEDULED, JobStatus.CANCELLED, JobStatus.NO_SHOW].includes(
+        job.job_status,
+      );
+
+    if (!canHardDelete) {
+      throw new ConflictException(
+        'Job can only be deleted before work or billing activity begins. Cancel it instead.',
+      );
+    }
+
     const before = job.toObject();
     const session = await this.jobModel.db.startSession();
 
@@ -287,12 +306,28 @@ export class JobsService {
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
+    if (
+      customer.is_archived === true &&
+      String(customer._id) !== String(job.customer_id)
+    ) {
+      throw new ConflictException(
+        'Archived customers cannot be assigned to new or updated jobs.',
+      );
+    }
 
     const vehicle = await this.vehicleModel
       .findById(asObjectId(vehicleId, 'vehicle id'))
       .exec();
     if (!vehicle) {
       throw new NotFoundException('Vehicle not found');
+    }
+    if (
+      vehicle.is_archived === true &&
+      String(vehicle._id) !== String(job.vehicle_id)
+    ) {
+      throw new ConflictException(
+        'Archived vehicles cannot be assigned to new or updated jobs.',
+      );
     }
 
     if (

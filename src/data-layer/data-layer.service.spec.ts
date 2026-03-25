@@ -230,4 +230,33 @@ describe('DataLayerService', () => {
       }),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('rejects creating a job for an archived customer', async () => {
+    const service = new DataLayerService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'customer-1',
+            is_archived: true,
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.createJob({
+        job_number: 'ABC123',
+        title: 'Inspection',
+        customer_id: 'customer-1',
+        vehicle_id: 'vehicle-1',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
 });

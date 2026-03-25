@@ -22,6 +22,9 @@ export class Customer {
 
   @Prop({ type: String, trim: true, lowercase: true, default: null })
   email!: string | null;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  is_archived!: boolean;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);

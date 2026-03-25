@@ -6,6 +6,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
+  AuditLog,
+  AuditLogDocument,
+} from '../audit-logs/schemas/audit-log.schema';
+import {
   Customer,
   CustomerDocument,
 } from '../customers/schemas/customer.schema';
@@ -24,6 +28,8 @@ export class VehiclesService {
     private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Job.name)
     private readonly jobModel: Model<JobDocument>,
+    @InjectModel(AuditLog.name)
+    private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
 
   async create(payload: CreateVehicleDto) {
@@ -33,10 +39,16 @@ export class VehiclesService {
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
+    if (customer.is_archived === true) {
+      throw new ConflictException(
+        'Vehicle cannot be created for an archived customer.',
+      );
+    }
 
     try {
       return await this.vehicleModel.create({
         customer_id: customer._id,
+        is_archived: false,
         color: payload.color ?? null,
         year: payload.year ?? null,
         make: payload.make,
@@ -57,7 +69,10 @@ export class VehiclesService {
   }
 
   async findAll() {
-    return this.vehicleModel.find().sort({ created_at: -1 }).exec();
+    return this.vehicleModel
+      .find()
+      .sort({ is_archived: 1, created_at: -1 })
+      .exec();
   }
 
   async findById(id: string) {
@@ -79,6 +94,14 @@ export class VehiclesService {
         .exec();
       if (!customer) {
         throw new NotFoundException('Customer not found');
+      }
+      if (
+        customer.is_archived === true &&
+        String(customer._id) !== String(vehicle.customer_id)
+      ) {
+        throw new ConflictException(
+          'Vehicle cannot be assigned to an archived customer.',
+        );
       }
       vehicle.customer_id = customer._id;
     }
@@ -107,20 +130,104 @@ export class VehiclesService {
     }
   }
 
-  async remove(id: string) {
+  async archive(id: string, actorUserId?: string) {
     const vehicle = await this.findById(id);
+    if (vehicle.is_archived === true) {
+      return vehicle;
+    }
+
+    const before = vehicle.toObject();
+    vehicle.is_archived = true;
+    await vehicle.save();
+
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'vehicle',
+      entityId: String(vehicle._id),
+      action: 'vehicle.archived',
+      before,
+      after: vehicle.toObject(),
+    });
+
+    return vehicle;
+  }
+
+  async unarchive(id: string, actorUserId?: string) {
+    const vehicle = await this.findById(id);
+    if (vehicle.is_archived !== true) {
+      return vehicle;
+    }
+
+    const owner = await this.customerModel.findById(vehicle.customer_id).exec();
+    if (!owner) {
+      throw new NotFoundException('Customer not found');
+    }
+    if (owner.is_archived === true) {
+      throw new ConflictException(
+        'Vehicle cannot be unarchived while its customer is archived.',
+      );
+    }
+
+    const before = vehicle.toObject();
+    vehicle.is_archived = false;
+    await vehicle.save();
+
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'vehicle',
+      entityId: String(vehicle._id),
+      action: 'vehicle.unarchived',
+      before,
+      after: vehicle.toObject(),
+    });
+
+    return vehicle;
+  }
+
+  async remove(id: string, actorUserId?: string) {
+    const vehicle = await this.findById(id);
+    const before = vehicle.toObject();
     const jobCount = await this.jobModel
       .countDocuments({ vehicle_id: vehicle._id })
       .exec();
 
     if (jobCount > 0) {
       throw new ConflictException(
-        `Vehicle cannot be deleted while ${jobCount} job${jobCount === 1 ? '' : 's'} still reference it.`,
+        `Vehicle cannot be deleted while ${jobCount} job${jobCount === 1 ? '' : 's'} still reference it. Archive the vehicle instead.`,
       );
     }
 
     await this.vehicleModel.deleteOne({ _id: vehicle._id }).exec();
 
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'vehicle',
+      entityId: String(vehicle._id),
+      action: 'vehicle.deleted',
+      before,
+      after: null,
+    });
+
     return { deleted: true };
+  }
+
+  private async recordAudit(input: {
+    actorUserId?: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    before: unknown | null;
+    after: unknown | null;
+  }) {
+    await this.auditLogModel.create({
+      actor_user_id: input.actorUserId
+        ? asObjectId(input.actorUserId, 'actor user id')
+        : null,
+      entity_type: input.entityType,
+      entity_id: input.entityId,
+      action: input.action,
+      before_json: (input.before ?? null) as Record<string, unknown> | null,
+      after_json: (input.after ?? null) as Record<string, unknown> | null,
+    });
   }
 }

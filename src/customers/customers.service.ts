@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import {
+  AuditLog,
+  AuditLogDocument,
+} from '../audit-logs/schemas/audit-log.schema';
 import { asObjectId } from '../common/utils/object-id';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
 import { Vehicle, VehicleDocument } from '../vehicles/schemas/vehicle.schema';
@@ -21,6 +25,8 @@ export class CustomersService {
     private readonly vehicleModel: Model<VehicleDocument>,
     @InjectModel(Job.name)
     private readonly jobModel: Model<JobDocument>,
+    @InjectModel(AuditLog.name)
+    private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
 
   async create(payload: CreateCustomerDto) {
@@ -31,7 +37,10 @@ export class CustomersService {
   }
 
   async findAll() {
-    return this.customerModel.find().sort({ created_at: -1 }).exec();
+    return this.customerModel
+      .find()
+      .sort({ is_archived: 1, created_at: -1 })
+      .exec();
   }
 
   async findById(id: string) {
@@ -67,12 +76,57 @@ export class CustomersService {
     const customer = await this.findById(id);
     return this.vehicleModel
       .find({ customer_id: customer._id })
-      .sort({ created_at: -1 })
+      .sort({ is_archived: 1, created_at: -1 })
       .exec();
   }
 
-  async remove(id: string) {
+  async archive(id: string, actorUserId?: string) {
     const customer = await this.findById(id);
+    if (customer.is_archived === true) {
+      return customer;
+    }
+
+    const before = customer.toObject();
+    customer.is_archived = true;
+    await customer.save();
+
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'customer',
+      entityId: String(customer._id),
+      action: 'customer.archived',
+      before,
+      after: customer.toObject(),
+    });
+
+    return customer;
+  }
+
+  async unarchive(id: string, actorUserId?: string) {
+    const customer = await this.findById(id);
+    if (customer.is_archived !== true) {
+      return customer;
+    }
+
+    const before = customer.toObject();
+    customer.is_archived = false;
+    await customer.save();
+
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'customer',
+      entityId: String(customer._id),
+      action: 'customer.unarchived',
+      before,
+      after: customer.toObject(),
+    });
+
+    return customer;
+  }
+
+  async remove(id: string, actorUserId?: string) {
+    const customer = await this.findById(id);
+    const before = customer.toObject();
     const [vehicleCount, jobCount] = await Promise.all([
       this.vehicleModel.countDocuments({ customer_id: customer._id }).exec(),
       this.jobModel.countDocuments({ customer_id: customer._id }).exec(),
@@ -92,12 +146,41 @@ export class CustomersService {
       }
 
       throw new ConflictException(
-        `Customer cannot be deleted while ${blockers.join(' and ')}.`,
+        `Customer cannot be deleted while ${blockers.join(' and ')}. Archive the customer instead.`,
       );
     }
 
     await this.customerModel.deleteOne({ _id: customer._id }).exec();
 
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'customer',
+      entityId: String(customer._id),
+      action: 'customer.deleted',
+      before,
+      after: null,
+    });
+
     return { deleted: true };
+  }
+
+  private async recordAudit(input: {
+    actorUserId?: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    before: unknown | null;
+    after: unknown | null;
+  }) {
+    await this.auditLogModel.create({
+      actor_user_id: input.actorUserId
+        ? asObjectId(input.actorUserId, 'actor user id')
+        : null,
+      entity_type: input.entityType,
+      entity_id: input.entityId,
+      action: input.action,
+      before_json: (input.before ?? null) as Record<string, unknown> | null,
+      after_json: (input.after ?? null) as Record<string, unknown> | null,
+    });
   }
 }

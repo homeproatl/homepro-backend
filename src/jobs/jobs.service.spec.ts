@@ -398,6 +398,8 @@ describe('JobsService', () => {
           exec: jest.fn().mockResolvedValue({
             _id: jobId,
             toObject: () => ({ _id: jobId, title: 'Inspection' }),
+            payment_status: 'UNPAID',
+            job_status: 'SCHEDULED',
           }),
         }),
         deleteOne: deleteJob,
@@ -409,9 +411,15 @@ describe('JobsService', () => {
         },
       } as never,
       {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
         deleteMany: deleteParts,
       } as never,
       {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
         deleteMany: deleteServices,
       } as never,
       {} as never,
@@ -450,5 +458,55 @@ describe('JobsService', () => {
     );
     expect(deleteJob).toHaveBeenCalledWith({ _id: jobId }, expect.any(Object));
     expect(endSession).toHaveBeenCalled();
+  });
+
+  it('blocks deleting a job after work activity has started', async () => {
+    const jobId = new Types.ObjectId();
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            payment_status: 'UNPAID',
+            job_status: 'CHECKED_IN',
+            toObject: () => ({ _id: jobId }),
+          }),
+        }),
+      } as never,
+      {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
+      } as never,
+      {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        getInvoiceHistoryCounts: jest.fn().mockResolvedValue({
+          snapshotCount: 0,
+          dispatchCount: 0,
+        }),
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: null,
+          latest_invoice_number: null,
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(service.remove(jobId.toString())).rejects.toThrow(
+      'Job can only be deleted before work or billing activity begins. Cancel it instead.',
+    );
   });
 });

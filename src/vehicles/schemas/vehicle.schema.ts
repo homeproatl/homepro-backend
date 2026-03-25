@@ -43,6 +43,9 @@ export class Vehicle {
 
   @Prop({ required: true, trim: true, uppercase: true, unique: true })
   license_plate!: string;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  is_archived!: boolean;
 }
 
 export const VehicleSchema = SchemaFactory.createForClass(Vehicle);

@@ -15,6 +15,9 @@ import {
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import type { AuthenticatedRequest } from '../auth/guards/auth.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../common/enums/user-role.enum';
 import { JobsService } from './jobs.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
@@ -28,7 +31,7 @@ import { CalendarJobsQueryDto } from './dto/calendar-jobs-query.dto';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 
 @Controller('jobs')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
@@ -79,6 +82,7 @@ export class JobsController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.SUPER_ADMIN)
   remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.jobsService.remove(id, request.user?.sub);
   }
