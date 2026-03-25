@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model } from 'mongoose';
 import puppeteer, { type Browser } from 'puppeteer';
 import { Resend } from 'resend';
 import {
@@ -292,6 +292,33 @@ export class JobInvoiceService implements OnModuleDestroy {
         this.serializeDispatch(dispatch),
       ),
     };
+  }
+
+  async getInvoiceHistoryCounts(jobId: string) {
+    const jobObjectId = asObjectId(jobId, 'job id');
+    const [snapshotCount, dispatchCount] = await Promise.all([
+      this.jobInvoiceSnapshotModel.countDocuments({ job_id: jobObjectId }).exec(),
+      this.jobInvoiceDispatchModel.countDocuments({ job_id: jobObjectId }).exec(),
+    ]);
+
+    return {
+      snapshotCount,
+      dispatchCount,
+    };
+  }
+
+  async deleteInvoiceHistoryForJob(jobId: string, session?: ClientSession) {
+    const jobObjectId = asObjectId(jobId, 'job id');
+    const options = session ? { session } : undefined;
+
+    await Promise.all([
+      this.jobInvoiceDispatchModel
+        .deleteMany({ job_id: jobObjectId }, options)
+        .exec(),
+      this.jobInvoiceSnapshotModel
+        .deleteMany({ job_id: jobObjectId }, options)
+        .exec(),
+    ]);
   }
 
   async issueInvoice(jobId: string, actorUserId?: string) {

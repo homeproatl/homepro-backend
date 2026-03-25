@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
+import { JobService, JobServiceSchema } from '../jobs/schemas/job-service.schema';
 import {
   ServiceCatalog,
   ServiceCatalogSchema,
@@ -16,6 +17,7 @@ import { AuthGuard } from '../auth/guards/auth.guard';
     JwtModule.register({}),
     MongooseModule.forFeature([
       { name: ServiceCatalog.name, schema: ServiceCatalogSchema },
+      { name: JobService.name, schema: JobServiceSchema },
     ]),
   ],
   controllers: [ServiceCatalogController],

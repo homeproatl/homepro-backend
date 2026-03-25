@@ -199,6 +199,54 @@ export class JobsService {
     };
   }
 
+  async remove(id: string, actorUserId?: string) {
+    const job = await this.jobModel.findById(asObjectId(id, 'job id')).exec();
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    const invoiceHistoryCounts =
+      await this.jobInvoiceService.getInvoiceHistoryCounts(id);
+    if (
+      invoiceHistoryCounts.snapshotCount > 0 ||
+      invoiceHistoryCounts.dispatchCount > 0
+    ) {
+      throw new ConflictException(
+        'Job cannot be deleted because invoice history already exists for it.',
+      );
+    }
+
+    const before = job.toObject();
+    const session = await this.jobModel.db.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        await Promise.all([
+          this.jobPartModel.deleteMany({ job_id: job._id }, { session }).exec(),
+          this.jobServiceModel
+            .deleteMany({ job_id: job._id }, { session })
+            .exec(),
+          this.jobInvoiceService.deleteInvoiceHistoryForJob(id, session),
+        ]);
+
+        await this.jobModel.deleteOne({ _id: job._id }, { session }).exec();
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    await this.recordAudit({
+      actorUserId,
+      entityType: 'job',
+      entityId: String(job._id),
+      action: 'job.deleted',
+      before,
+      after: null,
+    });
+
+    return { deleted: true };
+  }
+
   async update(id: string, payload: UpdateJobDto, actorUserId?: string) {
     const job = await this.jobModel.findById(asObjectId(id, 'job id')).exec();
     if (!job) {
@@ -582,6 +630,11 @@ export class JobsService {
         .exec();
       if (!service) {
         throw new NotFoundException('Service not found');
+      }
+      if (service.is_active === false) {
+        throw new BadRequestException(
+          'Inactive services cannot be added to a job',
+        );
       }
       if (service.base_price === null) {
         throw new BadRequestException(

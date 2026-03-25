@@ -210,6 +210,73 @@ describe('JobsService', () => {
     expect(line.save).toHaveBeenCalled();
   });
 
+  it('rejects reassigning a job line to an inactive service', async () => {
+    const jobId = new Types.ObjectId();
+    const jobServiceId = new Types.ObjectId();
+    const replacementServiceId = new Types.ObjectId();
+
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            toObject: () => ({ _id: jobId }),
+          }),
+        }),
+      } as never,
+      {} as never,
+      {
+        findOne: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            quantity: 2,
+            unit_price_snapshot: 10,
+            sub_total: 20,
+            save: jest.fn(),
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: replacementServiceId,
+            is_active: false,
+            base_price: 75,
+          }),
+        }),
+      } as never,
+      {
+        create: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        recomputeJobBillableTotal: jest.fn(),
+      } as never,
+      {
+        assertVehicleBelongsToCustomer: jest.fn(),
+        assertAssignedUserExists: jest.fn(),
+        assertSchedule: jest.fn(),
+      } as never,
+      {
+        markLatestSnapshotStaleIfNeeded: jest.fn().mockResolvedValue(undefined),
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: null,
+          latest_invoice_number: null,
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(
+      service.updateService(jobId.toString(), jobServiceId.toString(), {
+        service_id: replacementServiceId.toString(),
+      }),
+    ).rejects.toThrow('Inactive services cannot be added to a job');
+  });
+
   it('marks the latest invoice stale after payment status changes', async () => {
     const jobId = new Types.ObjectId();
     const actorUserId = new Types.ObjectId().toString();
@@ -266,5 +333,122 @@ describe('JobsService', () => {
     expect(markLatestSnapshotStaleIfNeeded).toHaveBeenCalledWith(
       jobId.toString(),
     );
+  });
+
+  it('blocks job deletion when invoice history already exists', async () => {
+    const jobId = new Types.ObjectId();
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            toObject: () => ({ _id: jobId }),
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        getInvoiceHistoryCounts: jest.fn().mockResolvedValue({
+          snapshotCount: 1,
+          dispatchCount: 0,
+        }),
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: null,
+          latest_invoice_number: null,
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(service.remove(jobId.toString())).rejects.toThrow(
+      'Job cannot be deleted because invoice history already exists for it.',
+    );
+  });
+
+  it('deletes a job transactionally when no invoice history exists', async () => {
+    const jobId = new Types.ObjectId();
+    const actorUserId = new Types.ObjectId().toString();
+    const deleteParts = jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 2 }),
+    });
+    const deleteServices = jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    });
+    const deleteJob = jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    });
+    const withTransaction = jest.fn(async (work: () => Promise<void>) => {
+      await work();
+    });
+    const endSession = jest.fn().mockResolvedValue(undefined);
+
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            toObject: () => ({ _id: jobId, title: 'Inspection' }),
+          }),
+        }),
+        deleteOne: deleteJob,
+        db: {
+          startSession: jest.fn().mockResolvedValue({
+            withTransaction,
+            endSession,
+          }),
+        },
+      } as never,
+      {
+        deleteMany: deleteParts,
+      } as never,
+      {
+        deleteMany: deleteServices,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        create: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {} as never,
+      {} as never,
+      {
+        getInvoiceHistoryCounts: jest.fn().mockResolvedValue({
+          snapshotCount: 0,
+          dispatchCount: 0,
+        }),
+        deleteInvoiceHistoryForJob: jest.fn().mockResolvedValue(undefined),
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: null,
+          latest_invoice_number: null,
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(
+      service.remove(jobId.toString(), actorUserId),
+    ).resolves.toEqual({ deleted: true });
+    expect(withTransaction).toHaveBeenCalled();
+    expect(deleteParts).toHaveBeenCalledWith({ job_id: jobId }, expect.any(Object));
+    expect(deleteServices).toHaveBeenCalledWith(
+      { job_id: jobId },
+      expect.any(Object),
+    );
+    expect(deleteJob).toHaveBeenCalledWith({ _id: jobId }, expect.any(Object));
+    expect(endSession).toHaveBeenCalled();
   });
 });

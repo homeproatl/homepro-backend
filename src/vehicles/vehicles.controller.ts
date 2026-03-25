@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -35,5 +36,10 @@ export class VehiclesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() payload: UpdateVehicleDto) {
     return this.vehiclesService.update(id, payload);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.vehiclesService.remove(id);
   }
 }

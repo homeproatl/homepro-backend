@@ -198,34 +198,78 @@ export class DataLayerService {
       quantity: number;
     },
   ) {
-    const job = await this.jobModel.findById(jobId).exec();
-    if (!job) {
-      throw new NotFoundException('Job not found');
+    const session = await this.jobModel.db.startSession();
+
+    try {
+      let createdLine: JobServiceDocument | null = null;
+
+      await session.withTransaction(async () => {
+        const job = await this.jobModel.findById(jobId).session(session).exec();
+        if (!job) {
+          throw new NotFoundException('Job not found');
+        }
+
+        const service = await this.serviceModel
+          .findOneAndUpdate(
+            {
+              _id: input.service_id,
+              is_active: { $ne: false },
+              base_price: { $ne: null },
+            },
+            { $inc: { __v: 1 } },
+            {
+              new: true,
+              session,
+              timestamps: false,
+            },
+          )
+          .exec();
+
+        if (!service) {
+          const existingService = await this.serviceModel
+            .findById(input.service_id)
+            .session(session)
+            .exec();
+
+          if (!existingService) {
+            throw new NotFoundException('Service not found');
+          }
+
+          if (existingService.is_active === false) {
+            throw new BadRequestException(
+              'Inactive services cannot be added to a job',
+            );
+          }
+
+          throw new BadRequestException(
+            'Service must have a saved base price before it can be added to a job',
+          );
+        }
+
+        const subTotal = calculateServiceSubtotal(
+          input.quantity,
+          service.base_price as number,
+        );
+
+        const line = new this.jobServiceModel({
+          job_id: job._id,
+          service_id: service._id,
+          quantity: input.quantity,
+          unit_price_snapshot: service.base_price as number,
+          sub_total: subTotal,
+        });
+        await line.save({ session });
+        createdLine = line;
+      });
+
+      if (!createdLine) {
+        throw new BadRequestException('Unable to add service line to the job');
+      }
+
+      return createdLine;
+    } finally {
+      await session.endSession();
     }
-
-    const service = await this.serviceModel.findById(input.service_id).exec();
-    if (!service) {
-      throw new NotFoundException('Service not found');
-    }
-
-    if (service.base_price === null) {
-      throw new BadRequestException(
-        'Service must have a saved base price before it can be added to a job',
-      );
-    }
-
-    const subTotal = calculateServiceSubtotal(
-      input.quantity,
-      service.base_price,
-    );
-
-    return this.jobServiceModel.create({
-      job_id: job._id,
-      service_id: service._id,
-      quantity: input.quantity,
-      unit_price_snapshot: service.base_price,
-      sub_total: subTotal,
-    });
   }
 
   async recomputeJobBillableTotal(jobId: ObjectIdLike) {

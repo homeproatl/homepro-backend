@@ -45,6 +45,12 @@ SUPER_ADMIN_PASSWORD=replace-with-secure-password
 
 `FRONTEND_ORIGIN` controls which browser origin is allowed to call the API during development or deployment.
 
+For the live frontend, set:
+
+```env
+FRONTEND_ORIGIN=https://www.gmbworkshop.shop
+```
+
 `SUPER_ADMIN_*` only matters for `npm run seed:super-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
 
 ## Invoice email transport

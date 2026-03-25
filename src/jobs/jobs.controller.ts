@@ -78,6 +78,11 @@ export class JobsController {
     return this.jobsService.findById(id);
   }
 
+  @Delete(':id')
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.jobsService.remove(id, request.user?.sub);
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,

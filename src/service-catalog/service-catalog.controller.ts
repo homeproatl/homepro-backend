@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -35,5 +36,20 @@ export class ServiceCatalogController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() payload: UpdateServiceDto) {
     return this.serviceCatalogService.update(id, payload);
+  }
+
+  @Patch(':id/deactivate')
+  deactivate(@Param('id') id: string) {
+    return this.serviceCatalogService.deactivate(id);
+  }
+
+  @Patch(':id/reactivate')
+  reactivate(@Param('id') id: string) {
+    return this.serviceCatalogService.reactivate(id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.serviceCatalogService.remove(id);
   }
 }

@@ -10,6 +10,7 @@ import {
   CustomerDocument,
 } from '../customers/schemas/customer.schema';
 import { asObjectId } from '../common/utils/object-id';
+import { Job, JobDocument } from '../jobs/schemas/job.schema';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { Vehicle, VehicleDocument } from './schemas/vehicle.schema';
@@ -21,6 +22,8 @@ export class VehiclesService {
     private readonly vehicleModel: Model<VehicleDocument>,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
+    @InjectModel(Job.name)
+    private readonly jobModel: Model<JobDocument>,
   ) {}
 
   async create(payload: CreateVehicleDto) {
@@ -102,5 +105,22 @@ export class VehiclesService {
       }
       throw error;
     }
+  }
+
+  async remove(id: string) {
+    const vehicle = await this.findById(id);
+    const jobCount = await this.jobModel
+      .countDocuments({ vehicle_id: vehicle._id })
+      .exec();
+
+    if (jobCount > 0) {
+      throw new ConflictException(
+        `Vehicle cannot be deleted while ${jobCount} job${jobCount === 1 ? '' : 's'} still reference it.`,
+      );
+    }
+
+    await this.vehicleModel.deleteOne({ _id: vehicle._id }).exec();
+
+    return { deleted: true };
   }
 }

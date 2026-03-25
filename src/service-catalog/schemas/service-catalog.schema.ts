@@ -14,6 +14,9 @@ export class ServiceCatalog {
   @Prop({ required: true, trim: true })
   name!: string;
 
+  @Prop({ type: Boolean, default: true })
+  is_active!: boolean;
+
   @Prop({ type: Number, default: null })
   base_price!: number | null;
 

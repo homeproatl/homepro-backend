@@ -1,38 +1,52 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataLayerService } from './data-layer.service';
 
-describe('DataLayerService', () => {
-  function createExecMock<T>(value: T) {
-    return {
-      exec: jest.fn().mockResolvedValue(value),
-    };
-  }
+function createSessionMock() {
+  return {
+    withTransaction: jest.fn(async (callback: () => Promise<unknown>) => callback()),
+    endSession: jest.fn().mockResolvedValue(undefined),
+  };
+}
 
+function createSessionExecMock<T>(value: T) {
+  return {
+    session: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(value),
+  };
+}
+
+describe('DataLayerService', () => {
   it('uses the saved service catalog price when adding a job service line', async () => {
-    const jobServiceCreate = jest.fn().mockResolvedValue(undefined);
+    const session = createSessionMock();
+    const save = jest.fn().mockResolvedValue(undefined);
+    const JobServiceModel = jest.fn().mockImplementation((payload) => ({
+      ...payload,
+      save,
+    }));
     const service = new DataLayerService(
       {} as never,
       {} as never,
       {} as never,
       {
-        findById: jest.fn().mockReturnValue(
-          createExecMock({
+        findOneAndUpdate: jest.fn().mockReturnValue(
+          createSessionExecMock({
             _id: 'service-1',
             base_price: 125,
           }),
         ),
       } as never,
       {
+        db: {
+          startSession: jest.fn().mockResolvedValue(session),
+        },
         findById: jest.fn().mockReturnValue(
-          createExecMock({
+          createSessionExecMock({
             _id: 'job-1',
           }),
         ),
       } as never,
       {} as never,
-      {
-        create: jobServiceCreate,
-      } as never,
+      JobServiceModel as never,
       {} as never,
     );
 
@@ -41,31 +55,133 @@ describe('DataLayerService', () => {
       quantity: 2,
     });
 
-    expect(jobServiceCreate).toHaveBeenCalledWith({
+    expect(JobServiceModel).toHaveBeenCalledWith({
       job_id: 'job-1',
       quantity: 2,
       service_id: 'service-1',
       sub_total: 250,
       unit_price_snapshot: 125,
     });
+    expect(save).toHaveBeenCalledWith({ session });
+    expect(session.endSession).toHaveBeenCalled();
   });
 
-  it('rejects adding a service without a saved base price', async () => {
+  it('claims the service document inside the transaction before creating a line', async () => {
+    const session = createSessionMock();
+    const findOneAndUpdate = jest.fn().mockReturnValue(
+      createSessionExecMock({
+        _id: 'service-1',
+        base_price: 125,
+      }),
+    );
     const service = new DataLayerService(
       {} as never,
       {} as never,
       {} as never,
       {
+        findOneAndUpdate,
+      } as never,
+      {
+        db: {
+          startSession: jest.fn().mockResolvedValue(session),
+        },
         findById: jest.fn().mockReturnValue(
-          createExecMock({
+          createSessionExecMock({
+            _id: 'job-1',
+          }),
+        ),
+      } as never,
+      {} as never,
+      jest.fn().mockImplementation((payload) => ({
+        ...payload,
+        save: jest.fn().mockResolvedValue(undefined),
+      })) as never,
+      {} as never,
+    );
+
+    await service.addJobServiceLine('job-1', {
+      service_id: 'service-1',
+      quantity: 2,
+    });
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: 'service-1',
+        is_active: { $ne: false },
+        base_price: { $ne: null },
+      },
+      { $inc: { __v: 1 } },
+      expect.objectContaining({
+        new: true,
+        session,
+        timestamps: false,
+      }),
+    );
+  });
+
+  it('rejects adding a service without a saved base price', async () => {
+    const session = createSessionMock();
+    const service = new DataLayerService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        findOneAndUpdate: jest.fn().mockReturnValue(createSessionExecMock(null)),
+        findById: jest.fn().mockReturnValue(
+          createSessionExecMock({
             _id: 'service-1',
             base_price: null,
+            is_active: true,
           }),
         ),
       } as never,
       {
+        db: {
+          startSession: jest.fn().mockResolvedValue(session),
+        },
         findById: jest.fn().mockReturnValue(
-          createExecMock({
+          createSessionExecMock({
+            _id: 'job-1',
+          }),
+        ),
+      } as never,
+      {} as never,
+      {
+        create: jest.fn(),
+      } as never,
+      {} as never,
+    );
+
+    await expect(
+      service.addJobServiceLine('job-1', {
+        service_id: 'service-1',
+        quantity: 1,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects adding an inactive service', async () => {
+    const session = createSessionMock();
+    const service = new DataLayerService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        findOneAndUpdate: jest.fn().mockReturnValue(createSessionExecMock(null)),
+        findById: jest.fn().mockReturnValue(
+          createSessionExecMock({
+            _id: 'service-1',
+            is_active: false,
+            base_price: 125,
+          }),
+        ),
+      } as never,
+      {
+        db: {
+          startSession: jest.fn().mockResolvedValue(session),
+        },
+        findById: jest.fn().mockReturnValue(
+          createSessionExecMock({
             _id: 'job-1',
           }),
         ),
@@ -86,15 +202,19 @@ describe('DataLayerService', () => {
   });
 
   it('rejects adding a service when the job does not exist', async () => {
+    const session = createSessionMock();
     const service = new DataLayerService(
       {} as never,
       {} as never,
       {} as never,
       {
-        findById: jest.fn(),
+        findOneAndUpdate: jest.fn(),
       } as never,
       {
-        findById: jest.fn().mockReturnValue(createExecMock(null)),
+        db: {
+          startSession: jest.fn().mockResolvedValue(session),
+        },
+        findById: jest.fn().mockReturnValue(createSessionExecMock(null)),
       } as never,
       {} as never,
       {
