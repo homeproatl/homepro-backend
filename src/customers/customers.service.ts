@@ -13,6 +13,7 @@ import { asObjectId } from '../common/utils/object-id';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
 import { Vehicle, VehicleDocument } from '../vehicles/schemas/vehicle.schema';
 import { CreateCustomerDto } from './dto/create-customer.dto';
+import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
 
@@ -36,9 +37,11 @@ export class CustomersService {
     });
   }
 
-  async findAll() {
+  async findAll(query: ListCustomersQueryDto = {}) {
+    const searchQuery = this.buildSearchQuery(query.search);
+
     return this.customerModel
-      .find()
+      .find(searchQuery)
       .sort({ is_archived: 1, created_at: -1 })
       .exec();
   }
@@ -169,8 +172,8 @@ export class CustomersService {
     entityType: string;
     entityId: string;
     action: string;
-    before: unknown | null;
-    after: unknown | null;
+    before: object | null;
+    after: object | null;
   }) {
     await this.auditLogModel.create({
       actor_user_id: input.actorUserId
@@ -179,8 +182,41 @@ export class CustomersService {
       entity_type: input.entityType,
       entity_id: input.entityId,
       action: input.action,
-      before_json: (input.before ?? null) as Record<string, unknown> | null,
-      after_json: (input.after ?? null) as Record<string, unknown> | null,
+      before_json: input.before as Record<string, unknown> | null,
+      after_json: input.after as Record<string, unknown> | null,
     });
+  }
+
+  private buildSearchQuery(search?: string) {
+    if (!search) {
+      return {};
+    }
+
+    const searchTokens = search
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+
+    if (searchTokens.length === 0) {
+      return {};
+    }
+
+    return {
+      $and: searchTokens.map((token) => {
+        const pattern = new RegExp(this.escapeRegExp(token), 'i');
+        return {
+          $or: [
+            { first_name: pattern },
+            { last_name: pattern },
+            { phone: pattern },
+            { email: pattern },
+          ],
+        };
+      }),
+    };
+  }
+
+  private escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

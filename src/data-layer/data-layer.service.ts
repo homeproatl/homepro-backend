@@ -115,6 +115,9 @@ export class DataLayerService {
       if (!assignedUser) {
         throw new NotFoundException('Assigned user not found');
       }
+      if (!assignedUser.is_active) {
+        throw new ConflictException('Assigned user is inactive');
+      }
 
       const existingJobs = await this.jobModel
         .find(

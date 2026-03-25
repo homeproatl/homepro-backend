@@ -2,6 +2,43 @@ import { ConflictException } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 
 describe('CustomersService', () => {
+  it('builds a tokenized search query for customer list filtering', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ exec });
+    const find = jest.fn().mockReturnValue({ sort });
+    const service = new CustomersService(
+      {
+        find,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.findAll({ search: 'john doe' });
+
+    expect(find).toHaveBeenCalledWith({
+      $and: [
+        {
+          $or: [
+            { first_name: /john/i },
+            { last_name: /john/i },
+            { phone: /john/i },
+            { email: /john/i },
+          ],
+        },
+        {
+          $or: [
+            { first_name: /doe/i },
+            { last_name: /doe/i },
+            { phone: /doe/i },
+            { email: /doe/i },
+          ],
+        },
+      ],
+    });
+  });
+
   it('blocks customer deletion while vehicles or jobs still reference the customer', async () => {
     const customer = {
       _id: '507f1f77bcf86cd799439011',
@@ -28,9 +65,9 @@ describe('CustomersService', () => {
       } as never,
     );
 
-    await expect(service.remove('507f1f77bcf86cd799439011')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      service.remove('507f1f77bcf86cd799439011'),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('deletes a customer when no vehicles or jobs reference it', async () => {
@@ -89,7 +126,9 @@ describe('CustomersService', () => {
       } as never,
     );
 
-    await expect(service.archive('507f1f77bcf86cd799439011')).resolves.toMatchObject({
+    await expect(
+      service.archive('507f1f77bcf86cd799439011'),
+    ).resolves.toMatchObject({
       _id: '507f1f77bcf86cd799439011',
       is_archived: true,
     });

@@ -1,4 +1,5 @@
 import { PaidStatus } from '../common/enums/paid-status.enum';
+import { ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { JobsService } from './jobs.service';
 import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.enum';
@@ -117,6 +118,153 @@ describe('JobsService', () => {
       invoice_needs_refresh: true,
       is_overdue: true,
     });
+  });
+
+  it('includes billing summary fields in job detail responses', async () => {
+    const jobId = new Types.ObjectId();
+    const getJobBillingSummary = jest.fn().mockResolvedValue({
+      invoice_status: JobInvoiceSnapshotStatus.ISSUED,
+      latest_invoice_number: 'INV-404',
+      invoice_ready: true,
+      send_ready: false,
+      invoice_needs_refresh: false,
+    });
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            customer_id: new Types.ObjectId(),
+            vehicle_id: new Types.ObjectId(),
+            payment_status: PaidStatus.UNPAID,
+            due_date: null,
+            toObject: () => ({
+              _id: jobId,
+              customer_id: '507f1f77bcf86cd799439011',
+              vehicle_id: '507f1f77bcf86cd799439012',
+              payment_status: PaidStatus.UNPAID,
+              due_date: null,
+            }),
+          }),
+        }),
+      } as never,
+      {
+        find: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      } as never,
+      {
+        find: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        getJobBillingSummary,
+      } as never,
+    );
+
+    await expect(service.findById(jobId.toString())).resolves.toMatchObject({
+      invoice_status: JobInvoiceSnapshotStatus.ISSUED,
+      latest_invoice_number: 'INV-404',
+      invoice_ready: true,
+      send_ready: false,
+      invoice_needs_refresh: false,
+    });
+    expect(getJobBillingSummary).toHaveBeenCalledWith(jobId.toString());
+  });
+
+  it('rejects assigning a job to an inactive user during updates', async () => {
+    const jobId = new Types.ObjectId();
+    const customerId = new Types.ObjectId();
+    const vehicleId = new Types.ObjectId();
+    const inactiveUserId = new Types.ObjectId();
+
+    const service = new JobsService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: jobId,
+            customer_id: customerId,
+            vehicle_id: vehicleId,
+            assigned_user_id: null,
+            scheduled_start: null,
+            scheduled_end: null,
+            payment_status: PaidStatus.UNPAID,
+            title: 'Inspection',
+            complaint_or_request: null,
+            notes: null,
+            payment_type: 'POS_CARD',
+            due_date: null,
+            save: jest.fn(),
+            toObject: () => ({
+              _id: jobId,
+              customer_id: customerId,
+              vehicle_id: vehicleId,
+              assigned_user_id: null,
+              payment_status: PaidStatus.UNPAID,
+              due_date: null,
+            }),
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: customerId,
+            is_archived: false,
+          }),
+        }),
+      } as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: vehicleId,
+            customer_id: customerId,
+            is_archived: false,
+          }),
+        }),
+      } as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: inactiveUserId,
+            is_active: false,
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        assertValidScheduleRange: jest.fn(),
+        vehicleBelongsToCustomer: jest.fn().mockReturnValue(true),
+        hasAssignedUserConflict: jest.fn().mockReturnValue(false),
+      } as never,
+      {
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: null,
+          latest_invoice_number: null,
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(
+      service.update(jobId.toString(), {
+        assigned_user_id: inactiveUserId.toString(),
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('refreshes the saved service price from the catalog when a job service is reassigned', async () => {
@@ -451,7 +599,10 @@ describe('JobsService', () => {
       service.remove(jobId.toString(), actorUserId),
     ).resolves.toEqual({ deleted: true });
     expect(withTransaction).toHaveBeenCalled();
-    expect(deleteParts).toHaveBeenCalledWith({ job_id: jobId }, expect.any(Object));
+    expect(deleteParts).toHaveBeenCalledWith(
+      { job_id: jobId },
+      expect.any(Object),
+    );
     expect(deleteServices).toHaveBeenCalledWith(
       { job_id: jobId },
       expect.any(Object),

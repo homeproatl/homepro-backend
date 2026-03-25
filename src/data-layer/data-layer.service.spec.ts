@@ -1,9 +1,15 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataLayerService } from './data-layer.service';
 
 function createSessionMock() {
   return {
-    withTransaction: jest.fn(async (callback: () => Promise<unknown>) => callback()),
+    withTransaction: jest.fn(async (callback: () => Promise<unknown>) =>
+      callback(),
+    ),
     endSession: jest.fn().mockResolvedValue(undefined),
   };
 }
@@ -19,10 +25,12 @@ describe('DataLayerService', () => {
   it('uses the saved service catalog price when adding a job service line', async () => {
     const session = createSessionMock();
     const save = jest.fn().mockResolvedValue(undefined);
-    const JobServiceModel = jest.fn().mockImplementation((payload) => ({
-      ...payload,
-      save,
-    }));
+    const JobServiceModel = jest
+      .fn()
+      .mockImplementation((payload: Record<string, unknown>) => ({
+        ...payload,
+        save,
+      }));
     const service = new DataLayerService(
       {} as never,
       {} as never,
@@ -92,7 +100,7 @@ describe('DataLayerService', () => {
         ),
       } as never,
       {} as never,
-      jest.fn().mockImplementation((payload) => ({
+      jest.fn().mockImplementation((payload: Record<string, unknown>) => ({
         ...payload,
         save: jest.fn().mockResolvedValue(undefined),
       })) as never,
@@ -126,7 +134,9 @@ describe('DataLayerService', () => {
       {} as never,
       {} as never,
       {
-        findOneAndUpdate: jest.fn().mockReturnValue(createSessionExecMock(null)),
+        findOneAndUpdate: jest
+          .fn()
+          .mockReturnValue(createSessionExecMock(null)),
         findById: jest.fn().mockReturnValue(
           createSessionExecMock({
             _id: 'service-1',
@@ -167,7 +177,9 @@ describe('DataLayerService', () => {
       {} as never,
       {} as never,
       {
-        findOneAndUpdate: jest.fn().mockReturnValue(createSessionExecMock(null)),
+        findOneAndUpdate: jest
+          .fn()
+          .mockReturnValue(createSessionExecMock(null)),
         findById: jest.fn().mockReturnValue(
           createSessionExecMock({
             _id: 'service-1',
@@ -258,5 +270,58 @@ describe('DataLayerService', () => {
         vehicle_id: 'vehicle-1',
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects creating a job for an inactive assigned user', async () => {
+    const service = new DataLayerService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      } as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'vehicle-1',
+            customer_id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      } as never,
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'user-1',
+            is_active: false,
+          }),
+        }),
+      } as never,
+      {} as never,
+      {
+        find: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {
+        vehicleBelongsToCustomer: jest.fn().mockReturnValue(true),
+        assertValidScheduleRange: jest.fn(),
+        hasAssignedUserConflict: jest.fn().mockReturnValue(false),
+      } as never,
+    );
+
+    await expect(
+      service.createJob({
+        job_number: 'ABC123',
+        title: 'Inspection',
+        customer_id: 'customer-1',
+        vehicle_id: 'vehicle-1',
+        assigned_user_id: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

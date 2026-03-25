@@ -10,6 +10,14 @@ type AuthTokens = {
   refreshToken: string;
 };
 
+type AuthTokenPayload = {
+  sub: string;
+  email: string;
+  role: string;
+  type: 'access' | 'refresh';
+  token_version?: number;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,7 +44,12 @@ export class AuthService {
 
     return {
       user: this.usersService.toAuthenticatedUser(user),
-      ...(await this.issueTokens(user.id, user.email, user.role)),
+      ...(await this.issueTokens(
+        user.id,
+        user.email,
+        user.role,
+        this.getTokenVersion(user.token_version),
+      )),
     };
   }
 
@@ -57,6 +70,7 @@ export class AuthService {
         email: string;
         role: string;
         type: 'access' | 'refresh';
+        token_version?: number;
       }>(refreshToken, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
@@ -70,16 +84,34 @@ export class AuthService {
         throw new UnauthorizedException('User no longer active');
       }
 
+      if (
+        this.getTokenVersion(user.token_version) !==
+        (payload.token_version ?? 0)
+      ) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
       return {
         user: this.usersService.toAuthenticatedUser(user),
-        ...(await this.issueTokens(user.id, user.email, user.role)),
+        ...(await this.issueTokens(
+          user.id,
+          user.email,
+          user.role,
+          this.getTokenVersion(user.token_version),
+        )),
       };
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
 
-  logout(userId: string) {
+  async logout(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (user) {
+      user.token_version = this.getTokenVersion(user.token_version) + 1;
+      await user.save();
+    }
+
     return { success: true, userId };
   }
 
@@ -87,9 +119,16 @@ export class AuthService {
     userId: string,
     email: string,
     role: string,
+    tokenVersion: number,
   ): Promise<AuthTokens> {
     const accessToken = await this.jwtService.signAsync(
-      { sub: userId, email, role, type: 'access' },
+      this.buildTokenPayload({
+        sub: userId,
+        email,
+        role,
+        type: 'access',
+        token_version: tokenVersion,
+      }),
       {
         secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
         expiresIn: this.configService.getOrThrow<string>(
@@ -99,7 +138,13 @@ export class AuthService {
     );
 
     const refreshToken = await this.jwtService.signAsync(
-      { sub: userId, email, role, type: 'refresh' },
+      this.buildTokenPayload({
+        sub: userId,
+        email,
+        role,
+        type: 'refresh',
+        token_version: tokenVersion,
+      }),
       {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn: this.configService.getOrThrow<string>(
@@ -109,5 +154,13 @@ export class AuthService {
     );
 
     return { accessToken, refreshToken };
+  }
+
+  private buildTokenPayload(payload: AuthTokenPayload) {
+    return payload;
+  }
+
+  private getTokenVersion(value: number | null | undefined) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
   }
 }

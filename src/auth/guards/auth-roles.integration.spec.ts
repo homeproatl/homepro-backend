@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { UsersService } from '../../users/users.service';
 import { Roles } from '../decorators/roles.decorator';
 import { AuthGuard } from './auth.guard';
 import { RolesGuard } from './roles.guard';
@@ -38,6 +39,7 @@ type RequestShape = {
     email: string;
     role: UserRole;
     type: 'access' | 'refresh';
+    token_version?: number;
   };
 };
 
@@ -78,6 +80,7 @@ describe('Auth + Roles guards (integration)', () => {
           email: 'rico@admin.com',
           role: UserRole.SUPER_ADMIN,
           type: 'access' as const,
+          token_version: 0,
         };
       }
 
@@ -87,6 +90,7 @@ describe('Auth + Roles guards (integration)', () => {
           email: 'admin@rico.com',
           role: UserRole.ADMIN,
           type: 'access' as const,
+          token_version: 0,
         };
       }
 
@@ -97,54 +101,69 @@ describe('Auth + Roles guards (integration)', () => {
   const configService = {
     getOrThrow: jest.fn().mockReturnValue('test-access-secret'),
   } as unknown as ConfigService;
+  const usersService = {
+    findById: jest.fn((id: string) => {
+      if (id === '507f1f77bcf86cd799439011') {
+        return { id, is_active: true, token_version: 0 };
+      }
+      if (id === '507f1f77bcf86cd799439012') {
+        return { id, is_active: true, token_version: 0 };
+      }
+      return null;
+    }),
+  } as unknown as UsersService;
 
-  const authGuard = new AuthGuard(jwtServiceMock, configService);
+  const authGuard = new AuthGuard(jwtServiceMock, configService, usersService);
   const rolesGuard = new RolesGuard(new Reflector());
 
-  it('returns 401 for missing auth token on protected route', () => {
+  it('returns 401 for missing auth token on protected route', async () => {
     const request: RequestShape = { headers: {} };
     const context = createContext(request, getControllerHandler('authOnly'));
 
-    expect(() => authGuard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(authGuard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
-  it('returns 401 for invalid auth token on protected route', () => {
+  it('returns 401 for invalid auth token on protected route', async () => {
     const request: RequestShape = {
       headers: { authorization: 'Bearer invalid-token' },
     };
     const context = createContext(request, getControllerHandler('authOnly'));
 
-    expect(() => authGuard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(authGuard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
-  it('returns true for valid auth token on auth-only route', () => {
+  it('returns true for valid auth token on auth-only route', async () => {
     const request: RequestShape = {
       headers: { authorization: 'Bearer valid-admin-user-token' },
     };
     const context = createContext(request, getControllerHandler('authOnly'));
 
-    expect(authGuard.canActivate(context)).toBe(true);
+    await expect(authGuard.canActivate(context)).resolves.toBe(true);
     expect(rolesGuard.canActivate(context)).toBe(true);
     expect(request.user?.role).toBe(UserRole.ADMIN);
   });
 
-  it('returns 403 when user role is insufficient', () => {
+  it('returns 403 when user role is insufficient', async () => {
     const request: RequestShape = {
       headers: { authorization: 'Bearer valid-admin-user-token' },
     };
     const context = createContext(request, getControllerHandler('adminOnly'));
 
-    expect(authGuard.canActivate(context)).toBe(true);
+    await expect(authGuard.canActivate(context)).resolves.toBe(true);
     expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);
   });
 
-  it('returns true when role requirement is satisfied', () => {
+  it('returns true when role requirement is satisfied', async () => {
     const request: RequestShape = {
       headers: { authorization: 'Bearer valid-admin-token' },
     };
     const context = createContext(request, getControllerHandler('adminOnly'));
 
-    expect(authGuard.canActivate(context)).toBe(true);
+    await expect(authGuard.canActivate(context)).resolves.toBe(true);
     expect(rolesGuard.canActivate(context)).toBe(true);
     expect(request.user?.role).toBe(UserRole.SUPER_ADMIN);
   });

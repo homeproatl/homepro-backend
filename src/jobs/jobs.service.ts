@@ -111,19 +111,6 @@ export class JobsService {
 
   async findAll(filters: ListJobsQueryDto = {}) {
     const query: Record<string, unknown> = {};
-    const defaultBillingSummary: {
-      invoice_status: JobInvoiceSnapshotStatus | null;
-      latest_invoice_number: string | null;
-      invoice_ready: boolean;
-      send_ready: boolean;
-      invoice_needs_refresh: boolean;
-    } = {
-      invoice_status: null,
-      latest_invoice_number: null,
-      invoice_ready: false,
-      send_ready: false,
-      invoice_needs_refresh: false,
-    };
 
     if (filters.customer_id) {
       query.customer_id = asObjectId(filters.customer_id, 'customer id');
@@ -137,48 +124,29 @@ export class JobsService {
       .find(query)
       .sort({ created_at: -1 })
       .exec();
-    const billingSummaryEntries: Array<[string, typeof defaultBillingSummary]> =
-      await Promise.all(
-        jobs.map(async (job) => [
-          String(job._id),
-          await this.jobInvoiceService.getJobBillingSummary(String(job._id)),
-        ]),
-      );
-    const billingSummaries = new Map<string, typeof defaultBillingSummary>(
-      billingSummaryEntries,
-    );
+    const jobsWithBillingSummaries = await this.withBillingSummaries(jobs);
 
-    return jobs
-      .map((job) =>
-        this.withDerivedJob(
-          job,
-          billingSummaries.get(String(job._id)) ?? defaultBillingSummary,
-        ),
-      )
-      .filter((job) => {
-        if (
-          filters.invoice_status &&
-          (job.invoice_status ?? 'NONE') !== filters.invoice_status
-        ) {
-          return false;
-        }
+    return jobsWithBillingSummaries.filter((job) => {
+      if (
+        filters.invoice_status &&
+        (job.invoice_status ?? 'NONE') !== filters.invoice_status
+      ) {
+        return false;
+      }
 
-        if (
-          filters.ready_to_invoice !== undefined &&
-          job.invoice_ready !== filters.ready_to_invoice
-        ) {
-          return false;
-        }
+      if (
+        filters.ready_to_invoice !== undefined &&
+        job.invoice_ready !== filters.ready_to_invoice
+      ) {
+        return false;
+      }
 
-        if (
-          filters.overdue !== undefined &&
-          job.is_overdue !== filters.overdue
-        ) {
-          return false;
-        }
+      if (filters.overdue !== undefined && job.is_overdue !== filters.overdue) {
+        return false;
+      }
 
-        return true;
-      });
+      return true;
+    });
   }
 
   async findById(id: string) {
@@ -192,8 +160,10 @@ export class JobsService {
       this.jobServiceModel.find({ job_id: job._id }).exec(),
     ]);
 
+    const [jobWithBillingSummary] = await this.withBillingSummaries([job]);
+
     return {
-      ...this.withDerivedJob(job),
+      ...jobWithBillingSummary,
       parts,
       services,
     };
@@ -345,6 +315,9 @@ export class JobsService {
         .exec();
       if (!user) {
         throw new NotFoundException('Assigned user not found');
+      }
+      if (!user.is_active) {
+        throw new ConflictException('Assigned user is inactive');
       }
 
       const existingJobs = await this.jobModel
@@ -765,7 +738,7 @@ export class JobsService {
       .find(query)
       .sort({ scheduled_start: 1 })
       .exec();
-    return jobs.map((job) => this.withDerivedJob(job));
+    return this.withBillingSummaries(jobs);
   }
 
   async getInvoicePreview(id: string) {
@@ -889,6 +862,30 @@ export class JobsService {
       send_ready: billingSummary?.send_ready ?? false,
       invoice_needs_refresh: billingSummary?.invoice_needs_refresh ?? false,
     };
+  }
+
+  private async withBillingSummaries(
+    jobs: Array<JobDocument | (Job & { _id: unknown })>,
+  ) {
+    if (jobs.length === 0) {
+      return [];
+    }
+
+    const billingSummaryEntries = await Promise.all(
+      jobs.map(async (job) => {
+        const jobId = String(job._id);
+        const billingSummary =
+          await this.jobInvoiceService.getJobBillingSummary(jobId);
+
+        return [jobId, billingSummary] as const;
+      }),
+    );
+
+    const billingSummaries = new Map(billingSummaryEntries);
+
+    return jobs.map((job) =>
+      this.withDerivedJob(job, billingSummaries.get(String(job._id))),
+    );
   }
 
   private async recordAudit(input: {

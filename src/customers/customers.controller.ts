@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
+import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 
 @Controller('customers')
@@ -29,8 +31,8 @@ export class CustomersController {
   }
 
   @Get()
-  findAll() {
-    return this.customersService.findAll();
+  findAll(@Query() query: ListCustomersQueryDto) {
+    return this.customersService.findAll(query);
   }
 
   @Get(':id')

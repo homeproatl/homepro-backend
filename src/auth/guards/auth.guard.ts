@@ -7,12 +7,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { UsersService } from '../../users/users.service';
 
 type JwtPayload = {
   sub: string;
   email: string;
   role: string;
   type: 'access' | 'refresh';
+  token_version?: number;
 };
 
 export type AuthenticatedRequest = Request & {
@@ -24,9 +26,10 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = this.extractToken(request);
 
@@ -40,6 +43,18 @@ export class AuthGuard implements CanActivate {
       });
 
       if (payload.type !== 'access') {
+        throw new UnauthorizedException('Invalid access token');
+      }
+
+      const user = await this.usersService.findById(payload.sub);
+      const userTokenVersion = user?.token_version ?? 0;
+      const payloadTokenVersion = payload.token_version ?? 0;
+
+      if (
+        !user ||
+        !user.is_active ||
+        userTokenVersion !== payloadTokenVersion
+      ) {
         throw new UnauthorizedException('Invalid access token');
       }
 
