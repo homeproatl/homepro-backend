@@ -3,6 +3,10 @@ import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import {
+  AuditLog,
+  AuditLogSchema,
+} from '../audit-logs/schemas/audit-log.schema';
 import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { Job, JobSchema } from '../jobs/schemas/job.schema';
 import { Vehicle, VehicleSchema } from './schemas/vehicle.schema';
@@ -17,6 +21,7 @@ import { VehiclesService } from './vehicles.service';
       { name: Vehicle.name, schema: VehicleSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: Job.name, schema: JobSchema },
+      { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
   controllers: [VehiclesController],
