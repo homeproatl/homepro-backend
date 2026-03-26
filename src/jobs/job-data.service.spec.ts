@@ -120,7 +120,7 @@ describe('JobDataService', () => {
       },
       { $inc: { __v: 1 } },
       expect.objectContaining({
-        new: true,
+        returnDocument: 'after',
         session,
         timestamps: false,
       }),

@@ -228,7 +228,7 @@ export class JobDataService {
             },
             { $inc: { __v: 1 } },
             {
-              new: true,
+              returnDocument: 'after',
               session,
               timestamps: false,
             },
