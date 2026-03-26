@@ -38,6 +38,9 @@ export class User {
   @Prop({ required: true, default: 0 })
   token_version!: number;
 
+  @Prop({ type: String, default: null })
+  refresh_token_hash!: string | null;
+
   @Prop({ type: Types.ObjectId, ref: User.name, default: null, index: true })
   created_by!: Types.ObjectId | null;
 }

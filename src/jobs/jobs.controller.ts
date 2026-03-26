@@ -45,6 +45,11 @@ export class JobsController {
     return this.jobsService.findAll(query);
   }
 
+  @Get('dashboard-summary')
+  getDashboardSummary() {
+    return this.jobsService.getDashboardSummary();
+  }
+
   @Get('calendar')
   calendar(@Query() query: CalendarJobsQueryDto) {
     return this.jobsService.calendar(query);

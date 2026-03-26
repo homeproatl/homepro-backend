@@ -1,34 +1,62 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import {
+  enableTrustedProxy,
+  getAllowedFrontendOrigins,
+} from './config/frontend-origin';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
-  const frontendOrigin = configService.get<string>('FRONTEND_ORIGIN');
-  const allowedOrigins = new Set(
-    [frontendOrigin, 'http://127.0.0.1:3000', 'http://localhost:3000'].filter(
-      (value): value is string => Boolean(value),
-    ),
-  );
+  const allowedOrigins = getAllowedFrontendOrigins(configService);
+
+  enableTrustedProxy(app);
+  app.use((request: Request, response: Response, next: NextFunction) => {
+    response.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    );
+    response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    response.setHeader('Origin-Agent-Cluster', '?1');
+    response.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=()',
+    );
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Frame-Options', 'DENY');
+
+    const forwardedProto = request.headers['x-forwarded-proto'];
+    const isSecure =
+      request.secure ||
+      forwardedProto === 'https' ||
+      (Array.isArray(forwardedProto) && forwardedProto.includes('https'));
+
+    if (isSecure) {
+      response.setHeader(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains',
+      );
+    }
+
+    next();
+  });
 
   app.enableCors({
     origin: (
       origin: string | undefined,
       callback: (error: Error | null, allow?: boolean) => void,
     ) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
-
-      callback(new Error('Not allowed by CORS'));
+      callback(null, !origin || allowedOrigins.has(origin));
     },
     methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token'],
-    credentials: false,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
   app.useGlobalPipes(
     new ValidationPipe({

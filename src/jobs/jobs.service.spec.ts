@@ -1,6 +1,7 @@
 import { PaidStatus } from '../common/enums/paid-status.enum';
 import { ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { JobStatus } from '../common/enums/job-status.enum';
 import { JobsService } from './jobs.service';
 import { JobInvoiceSnapshotStatus } from './enums/job-invoice-snapshot-status.enum';
 
@@ -117,6 +118,156 @@ describe('JobsService', () => {
       send_ready: true,
       invoice_needs_refresh: true,
       is_overdue: true,
+      admin_invoice_workflow_state: 'needs_resend',
+      admin_invoice_workflow_title: 'Needs Resend',
+      admin_invoice_workflow_detail: 'INV-001',
+    });
+  });
+
+  it('returns backend-derived admin invoice workflow labels on job rows', async () => {
+    const exec = jest.fn().mockResolvedValue([
+      {
+        _id: 'job-1',
+        toObject: () => ({
+          _id: 'job-1',
+          customer_id: '507f1f77bcf86cd799439011',
+          vehicle_id: '507f1f77bcf86cd799439012',
+          payment_status: PaidStatus.UNPAID,
+          due_date: null,
+        }),
+      },
+    ]);
+    const sort = jest.fn().mockReturnValue({ exec });
+    const find = jest.fn().mockReturnValue({ sort });
+
+    const service = new JobsService(
+      { find } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        getJobBillingSummary: jest.fn().mockResolvedValue({
+          invoice_status: JobInvoiceSnapshotStatus.ISSUED,
+          latest_invoice_number: 'INV-777',
+          invoice_ready: true,
+          send_ready: true,
+          invoice_needs_refresh: false,
+        }),
+      } as never,
+    );
+
+    await expect(service.findAll()).resolves.toMatchObject([
+      {
+        admin_invoice_workflow_state: 'ready_to_send',
+        admin_invoice_workflow_title: 'Ready to Send',
+        admin_invoice_workflow_detail: 'INV-777',
+      },
+    ]);
+  });
+
+  it('builds dashboard summary metrics on the backend', async () => {
+    const exec = jest.fn().mockResolvedValue([
+      {
+        _id: 'job-ready',
+        toObject: () => ({
+          _id: 'job-ready',
+          customer_id: 'customer-1',
+          vehicle_id: 'vehicle-1',
+          payment_status: PaidStatus.UNPAID,
+          job_status: JobStatus.SCHEDULED,
+          due_date: null,
+          total: 100,
+        }),
+      },
+      {
+        _id: 'job-overdue',
+        toObject: () => ({
+          _id: 'job-overdue',
+          customer_id: 'customer-2',
+          vehicle_id: 'vehicle-2',
+          payment_status: PaidStatus.UNPAID,
+          job_status: JobStatus.COMPLETED,
+          due_date: new Date(Date.now() - 60_000).toISOString(),
+          total: 50,
+        }),
+      },
+      {
+        _id: 'job-sent',
+        toObject: () => ({
+          _id: 'job-sent',
+          customer_id: 'customer-3',
+          vehicle_id: 'vehicle-3',
+          payment_status: PaidStatus.PAID,
+          job_status: JobStatus.COMPLETED,
+          due_date: null,
+          total: 0,
+        }),
+      },
+    ]);
+    const sort = jest.fn().mockReturnValue({ exec });
+    const find = jest.fn().mockReturnValue({ sort });
+    const getJobBillingSummary = jest
+      .fn()
+      .mockImplementation((jobId: string) => {
+        if (jobId === 'job-ready') {
+          return {
+            invoice_status: JobInvoiceSnapshotStatus.ISSUED,
+            latest_invoice_number: 'INV-READY',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          };
+        }
+
+        if (jobId === 'job-overdue') {
+          return {
+            invoice_status: JobInvoiceSnapshotStatus.STALE,
+            latest_invoice_number: 'INV-STALE',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: true,
+          };
+        }
+
+        return {
+          invoice_status: JobInvoiceSnapshotStatus.ACCEPTED,
+          latest_invoice_number: 'INV-SENT',
+          invoice_ready: false,
+          send_ready: false,
+          invoice_needs_refresh: false,
+        };
+      });
+
+    const service = new JobsService(
+      { find } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { getJobBillingSummary } as never,
+    );
+
+    await expect(service.getDashboardSummary()).resolves.toMatchObject({
+      active_jobs: 1,
+      ready_to_send: 1,
+      overdue_billing: 1,
+      unpaid_billing: 2,
+      overview_jobs: [
+        { _id: 'job-ready' },
+        { _id: 'job-overdue' },
+        { _id: 'job-sent' },
+      ],
     });
   });
 

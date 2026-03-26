@@ -6,7 +6,6 @@ import { AppService } from './app.service';
 import { validateEnv } from './config/env.validation';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { DataLayerModule } from './data-layer/data-layer.module';
 import { ServiceCatalogModule } from './service-catalog/service-catalog.module';
 import { CustomersModule } from './customers/customers.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
@@ -31,7 +30,6 @@ import { SettingsModule } from './settings/settings.module';
     }),
     UsersModule,
     AuthModule,
-    DataLayerModule,
     ServiceCatalogModule,
     CustomersModule,
     VehiclesModule,

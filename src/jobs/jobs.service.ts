@@ -8,10 +8,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { asObjectId } from '../common/utils/object-id';
 import { generateOrderId } from '../common/utils/order-id';
-import { DataLayerService } from '../data-layer/data-layer.service';
 import { PaidStatus } from '../common/enums/paid-status.enum';
 import { PaymentType } from '../common/enums/payment-type.enum';
 import { JobStatus } from '../common/enums/job-status.enum';
+import { JobDataService } from './job-data.service';
 import { Job, JobDocument } from './schemas/job.schema';
 import { JobPart, JobPartDocument } from './schemas/job-part.schema';
 import { JobService, JobServiceDocument } from './schemas/job-service.schema';
@@ -46,6 +46,37 @@ import {
   calculateServiceSubtotal,
 } from '../common/calculators/job-calculators';
 
+type AdminInvoiceWorkflowState =
+  | 'blocked'
+  | 'ready_to_send'
+  | 'sent'
+  | 'needs_resend';
+
+type JobBillingSummary = {
+  invoice_status: JobInvoiceSnapshotStatus | null;
+  latest_invoice_number: string | null;
+  invoice_ready: boolean;
+  send_ready: boolean;
+  invoice_needs_refresh: boolean;
+};
+
+type JobWorkflowSummary = {
+  admin_invoice_workflow_state: AdminInvoiceWorkflowState;
+  admin_invoice_workflow_title: string;
+  admin_invoice_workflow_detail: string;
+};
+
+type DashboardSummaryJob = {
+  _id?: unknown;
+  id?: string;
+  job_status?: JobStatus;
+  payment_status?: PaidStatus;
+  total?: number;
+  due_date?: string | Date | null;
+  is_overdue: boolean;
+  admin_invoice_workflow_state: AdminInvoiceWorkflowState;
+};
+
 @Injectable()
 export class JobsService {
   private readonly paymentStatusTransitions: Record<PaidStatus, PaidStatus[]> =
@@ -72,7 +103,7 @@ export class JobsService {
     private readonly serviceCatalogModel: Model<ServiceCatalogDocument>,
     @InjectModel(AuditLog.name)
     private readonly auditLogModel: Model<AuditLogDocument>,
-    private readonly dataLayerService: DataLayerService,
+    private readonly jobDataService: JobDataService,
     private readonly jobDomainService: JobDomainService,
     private readonly jobInvoiceService: JobInvoiceService,
   ) {}
@@ -147,6 +178,52 @@ export class JobsService {
 
       return true;
     });
+  }
+
+  async getDashboardSummary() {
+    const jobs = (await this.findAll()) as DashboardSummaryJob[];
+    const overviewJobs = this.getDashboardOverviewJobs(jobs);
+    let activeJobs = 0;
+    let readyToSend = 0;
+    let overdueBilling = 0;
+    let unpaidBilling = 0;
+
+    for (const job of jobs) {
+      if (
+        job.job_status &&
+        [
+          JobStatus.SCHEDULED,
+          JobStatus.CHECKED_IN,
+          JobStatus.IN_PROGRESS,
+        ].includes(job.job_status)
+      ) {
+        activeJobs += 1;
+      }
+
+      if (job.admin_invoice_workflow_state === 'ready_to_send') {
+        readyToSend += 1;
+      }
+
+      if (!this.isBillingVisible(job)) {
+        continue;
+      }
+
+      if (job.is_overdue) {
+        overdueBilling += 1;
+      }
+
+      if ((job.payment_status ?? PaidStatus.UNPAID) === PaidStatus.UNPAID) {
+        unpaidBilling += 1;
+      }
+    }
+
+    return {
+      overview_jobs: overviewJobs,
+      active_jobs: activeJobs,
+      ready_to_send: readyToSend,
+      overdue_billing: overdueBilling,
+      unpaid_billing: unpaidBilling,
+    };
   }
 
   async findById(id: string) {
@@ -480,9 +557,8 @@ export class JobsService {
     }
     const before = existingJob.toObject();
 
-    await this.dataLayerService.addJobPartLine(jobId, payload);
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    await this.jobDataService.addJobPartLine(jobId, payload);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -533,8 +609,7 @@ export class JobsService {
     part.sub_total = calculatePartSubtotal(part.quantity, part.unit_price);
     await part.save();
 
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -564,8 +639,7 @@ export class JobsService {
     if (!deleteResult.deletedCount) {
       throw new NotFoundException('Job part line not found');
     }
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -591,12 +665,11 @@ export class JobsService {
     }
     const before = existingJob.toObject();
 
-    await this.dataLayerService.addJobServiceLine(jobId, {
+    await this.jobDataService.addJobServiceLine(jobId, {
       service_id: payload.service_id,
       quantity: payload.quantity ?? 1,
     });
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -661,8 +734,7 @@ export class JobsService {
     );
     await line.save();
 
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -697,8 +769,7 @@ export class JobsService {
       throw new NotFoundException('Job service line not found');
     }
 
-    const updated =
-      await this.dataLayerService.recomputeJobBillableTotal(jobId);
+    const updated = await this.jobDataService.recomputeJobBillableTotal(jobId);
     await this.recordAudit({
       actorUserId,
       entityType: 'job',
@@ -783,7 +854,7 @@ export class JobsService {
     const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        return await this.dataLayerService.createJob({
+        return await this.jobDataService.createJob({
           job_number: generateOrderId(),
           title: input.title,
           customer_id: input.customer_id,
@@ -831,13 +902,7 @@ export class JobsService {
 
   private withDerivedJob(
     job: JobDocument | (Job & { _id: unknown }),
-    billingSummary?: {
-      invoice_status: JobInvoiceSnapshotStatus | null;
-      latest_invoice_number: string | null;
-      invoice_ready: boolean;
-      send_ready: boolean;
-      invoice_needs_refresh: boolean;
-    },
+    billingSummary?: JobBillingSummary,
   ) {
     const objectValue =
       typeof (job as JobDocument).toObject === 'function'
@@ -852,15 +917,22 @@ export class JobsService {
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
       paymentStatus !== PaidStatus.PAID;
-
-    return {
-      ...objectValue,
-      is_overdue: isOverdue,
+    const resolvedBillingSummary: JobBillingSummary = {
       invoice_status: billingSummary?.invoice_status ?? null,
       latest_invoice_number: billingSummary?.latest_invoice_number ?? null,
       invoice_ready: billingSummary?.invoice_ready ?? false,
       send_ready: billingSummary?.send_ready ?? false,
       invoice_needs_refresh: billingSummary?.invoice_needs_refresh ?? false,
+    };
+    const workflowSummary = this.getAdminInvoiceWorkflowSummary(
+      resolvedBillingSummary,
+    );
+
+    return {
+      ...objectValue,
+      is_overdue: isOverdue,
+      ...resolvedBillingSummary,
+      ...workflowSummary,
     };
   }
 
@@ -913,5 +985,108 @@ export class JobsService {
       return null;
     }
     return value as Record<string, unknown>;
+  }
+
+  private getAdminInvoiceWorkflowSummary(
+    billingSummary: JobBillingSummary,
+  ): JobWorkflowSummary {
+    if (
+      billingSummary.invoice_status === JobInvoiceSnapshotStatus.STALE ||
+      billingSummary.invoice_needs_refresh
+    ) {
+      return {
+        admin_invoice_workflow_state: 'needs_resend',
+        admin_invoice_workflow_title: 'Needs Resend',
+        admin_invoice_workflow_detail:
+          billingSummary.latest_invoice_number ?? 'Refresh required',
+      };
+    }
+
+    if (
+      billingSummary.invoice_status === JobInvoiceSnapshotStatus.ACCEPTED ||
+      billingSummary.invoice_status === JobInvoiceSnapshotStatus.SENT
+    ) {
+      return {
+        admin_invoice_workflow_state: 'sent',
+        admin_invoice_workflow_title: 'Accepted',
+        admin_invoice_workflow_detail:
+          billingSummary.latest_invoice_number ??
+          'Latest invoice accepted by provider',
+      };
+    }
+
+    if (
+      billingSummary.invoice_status === JobInvoiceSnapshotStatus.ISSUED &&
+      !billingSummary.send_ready
+    ) {
+      return {
+        admin_invoice_workflow_state: 'blocked',
+        admin_invoice_workflow_title: 'Blocked',
+        admin_invoice_workflow_detail:
+          billingSummary.latest_invoice_number ?? 'Resolve billing blockers',
+      };
+    }
+
+    if (
+      billingSummary.invoice_status === JobInvoiceSnapshotStatus.ISSUED ||
+      billingSummary.send_ready
+    ) {
+      return {
+        admin_invoice_workflow_state: 'ready_to_send',
+        admin_invoice_workflow_title: 'Ready to Send',
+        admin_invoice_workflow_detail:
+          billingSummary.latest_invoice_number ?? 'Can send invoice',
+      };
+    }
+
+    return {
+      admin_invoice_workflow_state: 'blocked',
+      admin_invoice_workflow_title: 'Blocked',
+      admin_invoice_workflow_detail: 'Needs billing details',
+    };
+  }
+
+  private getDashboardOverviewJobs(jobs: DashboardSummaryJob[]) {
+    const prioritizedJobs = [
+      ...jobs.filter((job) => this.isDashboardPriorityJob(job)),
+      ...jobs,
+    ];
+    const seenJobIds = new Set<string>();
+    const overviewJobs: DashboardSummaryJob[] = [];
+
+    for (const job of prioritizedJobs) {
+      const jobId = String(job.id ?? job._id);
+      if (seenJobIds.has(jobId)) {
+        continue;
+      }
+
+      seenJobIds.add(jobId);
+      overviewJobs.push(job);
+
+      if (overviewJobs.length === 5) {
+        break;
+      }
+    }
+
+    return overviewJobs;
+  }
+
+  private isDashboardPriorityJob(job: DashboardSummaryJob) {
+    return (
+      job.is_overdue ||
+      (job.payment_status ?? PaidStatus.UNPAID) !== PaidStatus.PAID ||
+      job.admin_invoice_workflow_state === 'ready_to_send' ||
+      job.admin_invoice_workflow_state === 'needs_resend'
+    );
+  }
+
+  private isBillingVisible(
+    job: Pick<DashboardSummaryJob, 'total' | 'due_date' | 'payment_status'>,
+  ) {
+    return (
+      Number(job.total ?? 0) > 0 ||
+      job.due_date != null ||
+      (job.payment_status ?? PaidStatus.UNPAID) !== PaidStatus.UNPAID
+    );
   }
 }

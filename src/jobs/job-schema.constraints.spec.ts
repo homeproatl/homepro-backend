@@ -7,7 +7,7 @@ import { User } from '../users/schemas/user.schema';
 import { UserSchema } from '../users/schemas/user.schema';
 import { VehicleSchema } from '../vehicles/schemas/vehicle.schema';
 
-describe('data layer constraints', () => {
+describe('job schema constraints', () => {
   it('enforces uniqueness on key fields', () => {
     expect(UserSchema.path('email').options.unique).toBe(true);
     expect(VehicleSchema.path('vin').options.unique).toBe(true);

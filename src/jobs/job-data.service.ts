@@ -23,19 +23,16 @@ import { ServiceCatalogDocument } from '../service-catalog/schemas/service-catal
 import { ServiceCatalog } from '../service-catalog/schemas/service-catalog.schema';
 import { PaidStatus } from '../common/enums/paid-status.enum';
 import { PaymentType } from '../common/enums/payment-type.enum';
-import { Job, JobDocument } from '../jobs/schemas/job.schema';
+import { Job, JobDocument } from './schemas/job.schema';
 import { JobStatus } from '../common/enums/job-status.enum';
-import { JobPart, JobPartDocument } from '../jobs/schemas/job-part.schema';
-import {
-  JobService,
-  JobServiceDocument,
-} from '../jobs/schemas/job-service.schema';
-import { JobDomainService } from '../jobs/job-domain.service';
+import { JobPart, JobPartDocument } from './schemas/job-part.schema';
+import { JobService, JobServiceDocument } from './schemas/job-service.schema';
+import { JobDomainService } from './job-domain.service';
 
 type ObjectIdLike = Types.ObjectId | string;
 
 @Injectable()
-export class DataLayerService {
+export class JobDataService {
   constructor(
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,

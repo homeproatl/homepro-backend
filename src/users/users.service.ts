@@ -83,12 +83,15 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    let shouldInvalidateAuthSession = false;
+
     if (payload.email && payload.email.toLowerCase() !== existing.email) {
       const conflict = await this.findByEmail(payload.email);
       if (conflict && String(conflict._id) !== String(existing._id)) {
         throw new ConflictException('User email already exists');
       }
       existing.email = payload.email.toLowerCase();
+      shouldInvalidateAuthSession = true;
     }
 
     if (payload.name !== undefined) {
@@ -101,14 +104,26 @@ export class UsersService {
 
     if (payload.role !== undefined) {
       existing.role = payload.role;
+      shouldInvalidateAuthSession = true;
     }
 
     if (payload.is_active !== undefined) {
       existing.is_active = payload.is_active;
+      shouldInvalidateAuthSession = true;
     }
 
     if (payload.password) {
       existing.password_hash = await bcrypt.hash(payload.password, 10);
+      shouldInvalidateAuthSession = true;
+    }
+
+    if (shouldInvalidateAuthSession) {
+      existing.token_version =
+        (typeof existing.token_version === 'number' &&
+        Number.isFinite(existing.token_version)
+          ? existing.token_version
+          : 0) + 1;
+      existing.refresh_token_hash = null;
     }
 
     await existing.save();

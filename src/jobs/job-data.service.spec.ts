@@ -3,7 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { DataLayerService } from './data-layer.service';
+import { JobDataService } from './job-data.service';
 
 function createSessionMock() {
   return {
@@ -21,7 +21,7 @@ function createSessionExecMock<T>(value: T) {
   };
 }
 
-describe('DataLayerService', () => {
+describe('JobDataService', () => {
   it('uses the saved service catalog price when adding a job service line', async () => {
     const session = createSessionMock();
     const save = jest.fn().mockResolvedValue(undefined);
@@ -31,7 +31,7 @@ describe('DataLayerService', () => {
         ...payload,
         save,
       }));
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {} as never,
       {} as never,
       {} as never,
@@ -82,7 +82,7 @@ describe('DataLayerService', () => {
         base_price: 125,
       }),
     );
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {} as never,
       {} as never,
       {} as never,
@@ -129,7 +129,7 @@ describe('DataLayerService', () => {
 
   it('rejects adding a service without a saved base price', async () => {
     const session = createSessionMock();
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {} as never,
       {} as never,
       {} as never,
@@ -172,7 +172,7 @@ describe('DataLayerService', () => {
 
   it('rejects adding an inactive service', async () => {
     const session = createSessionMock();
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {} as never,
       {} as never,
       {} as never,
@@ -215,7 +215,7 @@ describe('DataLayerService', () => {
 
   it('rejects adding a service when the job does not exist', async () => {
     const session = createSessionMock();
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {} as never,
       {} as never,
       {} as never,
@@ -244,7 +244,7 @@ describe('DataLayerService', () => {
   });
 
   it('rejects creating a job for an archived customer', async () => {
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {
         findById: jest.fn().mockReturnValue({
           exec: jest.fn().mockResolvedValue({
@@ -273,7 +273,7 @@ describe('DataLayerService', () => {
   });
 
   it('rejects creating a job for an inactive assigned user', async () => {
-    const service = new DataLayerService(
+    const service = new JobDataService(
       {
         findById: jest.fn().mockReturnValue({
           exec: jest.fn().mockResolvedValue({
