@@ -22,14 +22,14 @@ describe('RolesGuard', () => {
 
   it('blocks when authenticated user role is not allowed', () => {
     const reflector = {
-      getAllAndOverride: jest.fn().mockReturnValue([UserRole.SUPER_ADMIN]),
+      getAllAndOverride: jest.fn().mockReturnValue([UserRole.ADMIN]),
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
     const context = {
       getHandler: jest.fn(),
       getClass: jest.fn(),
       switchToHttp: () => ({
-        getRequest: () => ({ user: { role: UserRole.ADMIN } }),
+        getRequest: () => ({ user: { role: UserRole.TECHNICIAN } }),
       }),
     } as never;
 

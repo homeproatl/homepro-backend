@@ -39,7 +39,7 @@ describe('CustomersService', () => {
     });
   });
 
-  it('blocks customer deletion while vehicles or jobs still reference the customer', async () => {
+  it('blocks customer deletion while vehicles or estimates still reference the customer', async () => {
     const customer = {
       _id: '507f1f77bcf86cd799439011',
       toObject: () => ({ _id: '507f1f77bcf86cd799439011' }),
@@ -70,7 +70,7 @@ describe('CustomersService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('deletes a customer when no vehicles or jobs reference it', async () => {
+  it('deletes a customer when no vehicles or estimates reference it', async () => {
     const deleteOne = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     });

@@ -29,7 +29,7 @@ describe('AuthGuard', () => {
     const payload = {
       sub: '507f1f77bcf86cd799439011',
       email: 'rico@admin.com',
-      role: 'SUPER_ADMIN',
+      role: 'ADMIN',
       type: 'access' as const,
       token_version: 3,
     };
@@ -63,7 +63,7 @@ describe('AuthGuard', () => {
     const payload = {
       sub: '507f1f77bcf86cd799439011',
       email: 'rico@admin.com',
-      role: 'SUPER_ADMIN',
+      role: 'ADMIN',
       type: 'access' as const,
       token_version: 1,
     };

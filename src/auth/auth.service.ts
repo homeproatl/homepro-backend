@@ -44,16 +44,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const authenticatedUser = this.usersService.toAuthenticatedUser(user);
     const tokens = await this.issueTokens(
       user.id,
       user.email,
-      user.role,
+      authenticatedUser.role,
       this.getTokenVersion(user.token_version),
     );
     await this.storeRefreshTokenHash(user, tokens.refreshToken);
 
     return {
-      user: this.usersService.toAuthenticatedUser(user),
+      user: authenticatedUser,
       ...tokens,
     };
   }
@@ -100,16 +101,17 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
+      const authenticatedUser = this.usersService.toAuthenticatedUser(user);
       const tokens = await this.issueTokens(
         user.id,
         user.email,
-        user.role,
+        authenticatedUser.role,
         this.getTokenVersion(user.token_version),
       );
       await this.storeRefreshTokenHash(user, tokens.refreshToken);
 
       return {
-        user: this.usersService.toAuthenticatedUser(user),
+        user: authenticatedUser,
         ...tokens,
       };
     } catch {

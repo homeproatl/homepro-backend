@@ -12,10 +12,10 @@ async function bootstrap() {
   try {
     const usersService = app.get(UsersService);
     const serviceCatalogService = app.get(ServiceCatalogService);
-    const user = await usersService.ensureSuperAdmin();
+    const user = await usersService.ensureOwnerAdmin();
     await serviceCatalogService.ensureMinimalCatalog();
     // eslint-disable-next-line no-console
-    console.log(`Bootstrap seed ready for ${user.email}`);
+    console.log(`Bootstrap seed ready for owner admin ${user.email}`);
   } finally {
     await app.close();
   }

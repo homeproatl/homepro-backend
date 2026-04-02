@@ -10,9 +10,9 @@ type AppEnv = {
   JWT_REFRESH_SECRET: string;
   JWT_ACCESS_TTL: string;
   JWT_REFRESH_TTL: string;
-  SUPER_ADMIN_NAME?: string;
-  SUPER_ADMIN_EMAIL?: string;
-  SUPER_ADMIN_PASSWORD?: string;
+  OWNER_ADMIN_NAME?: string;
+  OWNER_ADMIN_EMAIL?: string;
+  OWNER_ADMIN_PASSWORD?: string;
 };
 
 function requiredValue(
@@ -30,7 +30,7 @@ function requiredValue(
 }
 
 function requiredMongoUri(env: NodeJS.ProcessEnv, fallback?: string): string {
-  const value = env.MONGO_URI ?? env.MONGODB_URI ?? fallback;
+  const value = env.MONGO_URI ?? fallback;
 
   if (!value) {
     throw new Error('Missing required environment variable: MONGO_URI');
@@ -156,7 +156,7 @@ function optionalEmailAddress(
 }
 
 function optionalResendApiKey(env: NodeJS.ProcessEnv) {
-  const value = env.INVOICE_EMAIL_RESEND_API_KEY ?? env.RESEND_API_KEY;
+  const value = env.INVOICE_EMAIL_RESEND_API_KEY;
   if (!value) {
     return undefined;
   }
@@ -168,7 +168,7 @@ function optionalEnvValue(
   env: NodeJS.ProcessEnv,
   key: keyof Pick<
     AppEnv,
-    'SUPER_ADMIN_NAME' | 'SUPER_ADMIN_EMAIL' | 'SUPER_ADMIN_PASSWORD'
+    'OWNER_ADMIN_NAME' | 'OWNER_ADMIN_EMAIL' | 'OWNER_ADMIN_PASSWORD'
   >,
   fallback?: string,
 ) {
@@ -247,20 +247,20 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
       env,
       defaults.JWT_REFRESH_TTL,
     ),
-    SUPER_ADMIN_NAME: optionalEnvValue(
+    OWNER_ADMIN_NAME: optionalEnvValue(
       env,
-      'SUPER_ADMIN_NAME',
-      defaults.SUPER_ADMIN_NAME,
+      'OWNER_ADMIN_NAME',
+      defaults.OWNER_ADMIN_NAME,
     ),
-    SUPER_ADMIN_EMAIL: optionalEnvValue(
+    OWNER_ADMIN_EMAIL: optionalEnvValue(
       env,
-      'SUPER_ADMIN_EMAIL',
-      defaults.SUPER_ADMIN_EMAIL,
+      'OWNER_ADMIN_EMAIL',
+      defaults.OWNER_ADMIN_EMAIL,
     ),
-    SUPER_ADMIN_PASSWORD: optionalEnvValue(
+    OWNER_ADMIN_PASSWORD: optionalEnvValue(
       env,
-      'SUPER_ADMIN_PASSWORD',
-      defaults.SUPER_ADMIN_PASSWORD,
+      'OWNER_ADMIN_PASSWORD',
+      defaults.OWNER_ADMIN_PASSWORD,
     ),
   };
 }

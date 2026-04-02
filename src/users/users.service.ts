@@ -130,27 +130,54 @@ export class UsersService {
     return this.toUserContract(existing);
   }
 
-  async ensureSuperAdmin(): Promise<UserDocument> {
+  async ensureOwnerAdmin(): Promise<UserDocument> {
     const email = this.configService
-      .getOrThrow<string>('SUPER_ADMIN_EMAIL')
+      .getOrThrow<string>('OWNER_ADMIN_EMAIL')
       .toLowerCase();
-    const name = this.configService.getOrThrow<string>('SUPER_ADMIN_NAME');
+    const name = this.configService.getOrThrow<string>('OWNER_ADMIN_NAME');
     const password = this.configService.getOrThrow<string>(
-      'SUPER_ADMIN_PASSWORD',
+      'OWNER_ADMIN_PASSWORD',
     );
 
     const existingUser = await this.findByEmail(email);
     if (existingUser) {
       let needsSave = false;
+      let shouldInvalidateAuthSession = false;
 
-      if (existingUser.role !== UserRole.SUPER_ADMIN) {
-        existingUser.role = UserRole.SUPER_ADMIN;
+      if (existingUser.name !== name) {
+        existingUser.name = name;
         needsSave = true;
+      }
+
+      if (existingUser.role !== UserRole.ADMIN) {
+        existingUser.role = UserRole.ADMIN;
+        needsSave = true;
+        shouldInvalidateAuthSession = true;
       }
 
       if (!existingUser.is_active) {
         existingUser.is_active = true;
         needsSave = true;
+        shouldInvalidateAuthSession = true;
+      }
+
+      const passwordMatches = await bcrypt.compare(
+        password,
+        existingUser.password_hash,
+      );
+      if (!passwordMatches) {
+        existingUser.password_hash = await bcrypt.hash(password, 10);
+        needsSave = true;
+        shouldInvalidateAuthSession = true;
+      }
+
+      if (shouldInvalidateAuthSession) {
+        existingUser.token_version =
+          (typeof existingUser.token_version === 'number' &&
+          Number.isFinite(existingUser.token_version)
+            ? existingUser.token_version
+            : 0) + 1;
+        existingUser.refresh_token_hash = null;
       }
 
       if (needsSave) {
@@ -166,7 +193,7 @@ export class UsersService {
       name,
       email,
       password_hash: passwordHash,
-      role: UserRole.SUPER_ADMIN,
+      role: UserRole.ADMIN,
       is_active: true,
       created_by: null,
       phone: null,

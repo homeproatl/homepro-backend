@@ -5,7 +5,7 @@ import {
   AuditLogSchema,
 } from '../audit-logs/schemas/audit-log.schema';
 import { AuthModule } from '../auth/auth.module';
-import { Job, JobSchema } from '../jobs/schemas/job.schema';
+import { Estimate, EstimateSchema } from '../estimates/schemas/estimate.schema';
 import { Vehicle, VehicleSchema } from '../vehicles/schemas/vehicle.schema';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
@@ -17,7 +17,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
       { name: Vehicle.name, schema: VehicleSchema },
-      { name: Job.name, schema: JobSchema },
+      { name: Estimate.name, schema: EstimateSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],

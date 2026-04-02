@@ -14,7 +14,7 @@ import {
   CustomerDocument,
 } from '../customers/schemas/customer.schema';
 import { asObjectId } from '../common/utils/object-id';
-import { Job, JobDocument } from '../jobs/schemas/job.schema';
+import { Estimate, EstimateDocument } from '../estimates/schemas/estimate.schema';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { Vehicle, VehicleDocument } from './schemas/vehicle.schema';
@@ -26,8 +26,8 @@ export class VehiclesService {
     private readonly vehicleModel: Model<VehicleDocument>,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
-    @InjectModel(Job.name)
-    private readonly jobModel: Model<JobDocument>,
+    @InjectModel(Estimate.name)
+    private readonly estimateModel: Model<EstimateDocument>,
     @InjectModel(AuditLog.name)
     private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
@@ -187,13 +187,13 @@ export class VehiclesService {
   async remove(id: string, actorUserId?: string) {
     const vehicle = await this.findById(id);
     const before = vehicle.toObject();
-    const jobCount = await this.jobModel
+    const estimateCount = await this.estimateModel
       .countDocuments({ vehicle_id: vehicle._id })
       .exec();
 
-    if (jobCount > 0) {
+    if (estimateCount > 0) {
       throw new ConflictException(
-        `Vehicle cannot be deleted while ${jobCount} job${jobCount === 1 ? '' : 's'} still reference it. Archive the vehicle instead.`,
+        `Vehicle cannot be deleted while ${estimateCount} estimate${estimateCount === 1 ? '' : 's'} still reference it. Archive the vehicle instead.`,
       );
     }
 

@@ -1,0 +1,190 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument, Types } from 'mongoose';
+import { Customer } from '../../customers/schemas/customer.schema';
+import { Vehicle } from '../../vehicles/schemas/vehicle.schema';
+import { User } from '../../users/schemas/user.schema';
+import { PaidStatus } from '../../common/enums/paid-status.enum';
+import { PaymentType } from '../../common/enums/payment-type.enum';
+import { EstimateStatus } from '../../common/enums/estimate-status.enum';
+
+export type EstimateDocument = HydratedDocument<Estimate>;
+
+@Schema({ _id: true, id: false })
+export class EstimateLaborLine {
+  _id?: Types.ObjectId;
+
+  @Prop({ required: true, trim: true })
+  description!: string;
+
+  @Prop({ type: Types.ObjectId, ref: User.name, default: null })
+  assigned_user_id!: Types.ObjectId | null;
+
+  @Prop({ required: true, min: 0 })
+  hours!: number;
+
+  @Prop({ required: true, min: 0 })
+  rate!: number;
+
+  @Prop({ required: true, min: 0, max: 100, default: 0 })
+  discount_percent!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal!: number;
+}
+
+export const EstimateLaborLineSchema = SchemaFactory.createForClass(EstimateLaborLine);
+
+@Schema({ _id: true, id: false })
+export class EstimatePartLine {
+  _id?: Types.ObjectId;
+
+  @Prop({ required: true, trim: true })
+  name!: string;
+
+  @Prop({ required: true, min: 1 })
+  quantity!: number;
+
+  @Prop({ type: Number, default: null, min: 0 })
+  cost!: number | null;
+
+  @Prop({ required: true, min: 0 })
+  price!: number;
+
+  @Prop({ required: true, min: 0, max: 100, default: 0 })
+  discount_percent!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal!: number;
+}
+
+export const EstimatePartLineSchema = SchemaFactory.createForClass(EstimatePartLine);
+
+@Schema({ _id: true, id: false })
+export class EstimateServiceEntry {
+  _id?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'ServiceCatalog', default: null })
+  canned_service_id!: Types.ObjectId | null;
+
+  @Prop({ required: true, trim: true })
+  name!: string;
+
+  @Prop({
+    type: [EstimateLaborLineSchema],
+    default: [],
+  })
+  labor_lines!: EstimateLaborLine[];
+
+  @Prop({
+    type: [EstimatePartLineSchema],
+    default: [],
+  })
+  part_lines!: EstimatePartLine[];
+
+  @Prop({ required: true, min: 0, default: 0 })
+  labor_total!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  parts_total!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  total!: number;
+}
+
+export const EstimateServiceEntrySchema =
+  SchemaFactory.createForClass(EstimateServiceEntry);
+
+@Schema({
+  collection: 'estimates',
+  timestamps: {
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+  },
+})
+export class Estimate {
+  @Prop({ required: true, trim: true, uppercase: true, unique: true })
+  estimate_number!: string;
+
+  @Prop({ required: true, trim: true })
+  title!: string;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: Customer.name,
+    required: true,
+    index: true,
+  })
+  customer_id!: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: Vehicle.name,
+    required: true,
+    index: true,
+  })
+  vehicle_id!: Types.ObjectId;
+
+  @Prop({ type: Date, default: null, index: true })
+  scheduled_start!: Date | null;
+
+  @Prop({ type: Date, default: null, index: true })
+  scheduled_end!: Date | null;
+
+  @Prop({ type: Types.ObjectId, ref: User.name, default: null, index: true })
+  assigned_user_id!: Types.ObjectId | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  complaint_or_request!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  notes!: string | null;
+
+  @Prop({
+    type: String,
+    required: true,
+    enum: EstimateStatus,
+    default: EstimateStatus.SCHEDULED,
+    index: true,
+  })
+  estimate_status!: EstimateStatus;
+
+  @Prop({
+    type: String,
+    required: true,
+    enum: PaidStatus,
+    default: PaidStatus.UNPAID,
+    index: true,
+  })
+  payment_status!: PaidStatus;
+
+  @Prop({
+    type: String,
+    required: true,
+    enum: PaymentType,
+    default: PaymentType.POS_CARD,
+  })
+  payment_type!: PaymentType;
+
+  @Prop({ type: Date, default: null, index: true })
+  due_date!: Date | null;
+
+  @Prop({
+    type: [EstimateServiceEntrySchema],
+    default: [],
+  })
+  services!: EstimateServiceEntry[];
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  labor_total!: number;
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  parts_total!: number;
+
+  @Prop({ type: Number, required: true, default: 0 })
+  total!: number;
+}
+
+export const EstimateSchema = SchemaFactory.createForClass(Estimate);
+
+EstimateSchema.index({ assigned_user_id: 1, scheduled_start: 1, scheduled_end: 1 });
+EstimateSchema.index({ created_at: -1 });

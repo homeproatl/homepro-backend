@@ -7,6 +7,7 @@ import { UsersController } from './users.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { UsersBootstrapService } from './users-bootstrap.service';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [UsersController],
-  providers: [UsersService, AuthGuard, RolesGuard],
+  providers: [UsersService, UsersBootstrapService, AuthGuard, RolesGuard],
   exports: [UsersService],
 })
 export class UsersModule {}

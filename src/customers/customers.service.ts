@@ -10,7 +10,7 @@ import {
   AuditLogDocument,
 } from '../audit-logs/schemas/audit-log.schema';
 import { asObjectId } from '../common/utils/object-id';
-import { Job, JobDocument } from '../jobs/schemas/job.schema';
+import { Estimate, EstimateDocument } from '../estimates/schemas/estimate.schema';
 import { Vehicle, VehicleDocument } from '../vehicles/schemas/vehicle.schema';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
@@ -24,8 +24,8 @@ export class CustomersService {
     private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Vehicle.name)
     private readonly vehicleModel: Model<VehicleDocument>,
-    @InjectModel(Job.name)
-    private readonly jobModel: Model<JobDocument>,
+    @InjectModel(Estimate.name)
+    private readonly estimateModel: Model<EstimateDocument>,
     @InjectModel(AuditLog.name)
     private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
@@ -130,21 +130,21 @@ export class CustomersService {
   async remove(id: string, actorUserId?: string) {
     const customer = await this.findById(id);
     const before = customer.toObject();
-    const [vehicleCount, jobCount] = await Promise.all([
+    const [vehicleCount, estimateCount] = await Promise.all([
       this.vehicleModel.countDocuments({ customer_id: customer._id }).exec(),
-      this.jobModel.countDocuments({ customer_id: customer._id }).exec(),
+      this.estimateModel.countDocuments({ customer_id: customer._id }).exec(),
     ]);
 
-    if (vehicleCount > 0 || jobCount > 0) {
+    if (vehicleCount > 0 || estimateCount > 0) {
       const blockers: string[] = [];
       if (vehicleCount > 0) {
         blockers.push(
           `${vehicleCount} vehicle${vehicleCount === 1 ? '' : 's'} still belong to this customer`,
         );
       }
-      if (jobCount > 0) {
+      if (estimateCount > 0) {
         blockers.push(
-          `${jobCount} job${jobCount === 1 ? '' : 's'} still reference this customer`,
+          `${estimateCount} estimate${estimateCount === 1 ? '' : 's'} still reference this customer`,
         );
       }
 

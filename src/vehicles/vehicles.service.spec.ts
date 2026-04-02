@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { VehiclesService } from './vehicles.service';
 
 describe('VehiclesService', () => {
-  it('blocks vehicle deletion while jobs still reference the vehicle', async () => {
+  it('blocks vehicle deletion while estimates still reference the vehicle', async () => {
     const service = new VehiclesService(
       {
         findById: jest.fn().mockReturnValue({
@@ -28,7 +28,7 @@ describe('VehiclesService', () => {
     );
   });
 
-  it('deletes a vehicle when no jobs reference it', async () => {
+  it('deletes a vehicle when no estimates reference it', async () => {
     const deleteOne = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     });

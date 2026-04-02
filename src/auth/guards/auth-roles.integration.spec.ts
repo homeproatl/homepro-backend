@@ -24,7 +24,7 @@ class GuardTestController {
   }
 
   @Get('admin-only')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.ADMIN)
   adminOnly() {
     return { ok: true };
   }
@@ -78,17 +78,17 @@ describe('Auth + Roles guards (integration)', () => {
         return {
           sub: '507f1f77bcf86cd799439011',
           email: 'rico@admin.com',
-          role: UserRole.SUPER_ADMIN,
+          role: UserRole.ADMIN,
           type: 'access' as const,
           token_version: 0,
         };
       }
 
-      if (token === 'valid-admin-user-token') {
+      if (token === 'valid-technician-token') {
         return {
           sub: '507f1f77bcf86cd799439012',
-          email: 'admin@rico.com',
-          role: UserRole.ADMIN,
+          email: 'tech@rico.com',
+          role: UserRole.TECHNICIAN,
           type: 'access' as const,
           token_version: 0,
         };
@@ -138,18 +138,18 @@ describe('Auth + Roles guards (integration)', () => {
 
   it('returns true for valid auth token on auth-only route', async () => {
     const request: RequestShape = {
-      headers: { authorization: 'Bearer valid-admin-user-token' },
+      headers: { authorization: 'Bearer valid-technician-token' },
     };
     const context = createContext(request, getControllerHandler('authOnly'));
 
     await expect(authGuard.canActivate(context)).resolves.toBe(true);
     expect(rolesGuard.canActivate(context)).toBe(true);
-    expect(request.user?.role).toBe(UserRole.ADMIN);
+    expect(request.user?.role).toBe(UserRole.TECHNICIAN);
   });
 
   it('returns 403 when user role is insufficient', async () => {
     const request: RequestShape = {
-      headers: { authorization: 'Bearer valid-admin-user-token' },
+      headers: { authorization: 'Bearer valid-technician-token' },
     };
     const context = createContext(request, getControllerHandler('adminOnly'));
 
@@ -165,6 +165,6 @@ describe('Auth + Roles guards (integration)', () => {
 
     await expect(authGuard.canActivate(context)).resolves.toBe(true);
     expect(rolesGuard.canActivate(context)).toBe(true);
-    expect(request.user?.role).toBe(UserRole.SUPER_ADMIN);
+    expect(request.user?.role).toBe(UserRole.ADMIN);
   });
 });

@@ -40,7 +40,7 @@ function getRefreshCookieOptions(configService: ConfigService) {
     httpOnly: true,
     secure: isProduction,
     sameSite,
-    path: '/auth',
+    path: '/',
     maxAge: parseDurationToMs(
       configService.getOrThrow<string>('JWT_REFRESH_TTL'),
     ),

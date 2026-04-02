@@ -9,7 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ServiceCatalogModule } from './service-catalog/service-catalog.module';
 import { CustomersModule } from './customers/customers.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
-import { JobsModule } from './jobs/jobs.module';
+import { EstimatesModule } from './estimates/estimates.module';
 import { SettingsModule } from './settings/settings.module';
 
 @Module({
@@ -33,7 +33,7 @@ import { SettingsModule } from './settings/settings.module';
     ServiceCatalogModule,
     CustomersModule,
     VehiclesModule,
-    JobsModule,
+    EstimatesModule,
     SettingsModule,
   ],
   controllers: [AppController],

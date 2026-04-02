@@ -4,11 +4,11 @@ NestJS API for the Rico admin app.
 
 ## What it does
 
-- owns the canonical domain logic for jobs, customers, vehicles, services, auth, and settings
+- owns the canonical domain logic for estimates, customers, vehicles, services, auth, and settings
 - stores scheduling and billing state
 - exposes the API consumed directly by the frontend
-
-The frontend does not proxy requests through Next.js anymore. The browser talks to this API directly.
+ 
+The frontend reaches this API through its same-origin `/api` proxy layer.
 
 This README is safe to update independently of runtime behavior.
 
@@ -38,9 +38,9 @@ JWT_REFRESH_SECRET=replace-with-secure-refresh-secret
 JWT_ACCESS_TTL=15m
 JWT_REFRESH_TTL=7d
 
-SUPER_ADMIN_NAME=Rico
-SUPER_ADMIN_EMAIL=rico@admin.com
-SUPER_ADMIN_PASSWORD=replace-with-secure-password
+OWNER_ADMIN_NAME=Rico
+OWNER_ADMIN_EMAIL=rico@admin.com
+OWNER_ADMIN_PASSWORD=replace-with-secure-password
 ```
 
 `FRONTEND_ORIGIN` controls which browser origin is allowed to call the API during development or deployment.
@@ -51,7 +51,7 @@ For the live frontend, set:
 FRONTEND_ORIGIN=https://www.gmbworkshop.shop
 ```
 
-`SUPER_ADMIN_*` only matters for `npm run seed:super-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
+`OWNER_ADMIN_*` only matters for `npm run seed:owner-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
 
 ## Invoice email transport
 
@@ -67,7 +67,6 @@ INVOICE_EMAIL_RESEND_API_KEY=re_replace_with_your_resend_api_key
 
 Notes:
 - `INVOICE_EMAIL_FROM` must use a sender address on a verified Resend domain or subdomain.
-- `RESEND_API_KEY` is also accepted as an alias, but `INVOICE_EMAIL_RESEND_API_KEY` is the canonical backend variable.
 - `LOG` and `DISABLED` are still available for non-delivery environments, but production sending is Resend-only.
 
 ## Run the API
@@ -89,8 +88,8 @@ By default the API runs on `http://127.0.0.1:4000`.
 # reset the database to the clean-sheet state
 npm run reset:clean-sheet
 
-# create the super admin user
-npm run seed:super-admin
+# create the owner admin user
+npm run seed:owner-admin
 
 # seed a minimal service catalog
 npm run seed:services
@@ -106,7 +105,7 @@ npm run reset:clean-sheet
 npm run seed:bootstrap
 ```
 
-`seed:bootstrap` creates the configured super admin and the minimal service catalog used by the jobs flow.
+`seed:bootstrap` creates the configured owner admin and the minimal service catalog used by the estimate flow.
 
 ## Verification
 

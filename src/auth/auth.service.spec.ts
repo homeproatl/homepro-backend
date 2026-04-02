@@ -36,7 +36,7 @@ describe('AuthService', () => {
       findById: jest.fn().mockResolvedValue({
         id: '507f1f77bcf86cd799439011',
         email: 'rico@admin.com',
-        role: 'SUPER_ADMIN',
+        role: 'ADMIN',
         is_active: true,
         token_version: 4,
       }),
@@ -46,7 +46,7 @@ describe('AuthService', () => {
       verify: jest.fn().mockReturnValue({
         sub: '507f1f77bcf86cd799439011',
         email: 'rico@admin.com',
-        role: 'SUPER_ADMIN',
+        role: 'ADMIN',
         type: 'refresh',
         token_version: 3,
       }),
@@ -65,7 +65,7 @@ describe('AuthService', () => {
     const user = {
       id: '507f1f77bcf86cd799439011',
       email: 'rico@admin.com',
-      role: 'SUPER_ADMIN',
+      role: 'ADMIN',
       is_active: true,
       token_version: 4,
       refresh_token_hash: createHash('sha256')

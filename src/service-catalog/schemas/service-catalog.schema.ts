@@ -3,6 +3,53 @@ import { HydratedDocument } from 'mongoose';
 
 export type ServiceCatalogDocument = HydratedDocument<ServiceCatalog>;
 
+@Schema({ _id: true, id: false })
+export class ServiceCatalogLaborLine {
+  @Prop({ required: true, trim: true })
+  description!: string;
+
+  @Prop({ required: true, min: 0 })
+  hours!: number;
+
+  @Prop({ required: true, min: 0 })
+  rate!: number;
+
+  @Prop({ required: true, min: 0, max: 100, default: 0 })
+  discount_percent!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal!: number;
+}
+
+export const ServiceCatalogLaborLineSchema = SchemaFactory.createForClass(
+  ServiceCatalogLaborLine,
+);
+
+@Schema({ _id: true, id: false })
+export class ServiceCatalogPartLine {
+  @Prop({ required: true, trim: true })
+  name!: string;
+
+  @Prop({ required: true, min: 1 })
+  quantity!: number;
+
+  @Prop({ type: Number, default: null, min: 0 })
+  cost!: number | null;
+
+  @Prop({ required: true, min: 0 })
+  price!: number;
+
+  @Prop({ required: true, min: 0, max: 100, default: 0 })
+  discount_percent!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal!: number;
+}
+
+export const ServiceCatalogPartLineSchema = SchemaFactory.createForClass(
+  ServiceCatalogPartLine,
+);
+
 @Schema({
   collection: 'services',
   timestamps: {
@@ -14,17 +61,35 @@ export class ServiceCatalog {
   @Prop({ required: true, trim: true })
   name!: string;
 
+  @Prop({ required: true, trim: true })
+  normalized_name!: string;
+
   @Prop({ type: Boolean, default: true })
   is_active!: boolean;
 
-  @Prop({ type: Number, default: null })
-  base_price!: number | null;
+  @Prop({
+    type: [ServiceCatalogLaborLineSchema],
+    default: [],
+  })
+  labor_lines!: ServiceCatalogLaborLine[];
 
-  @Prop({ type: Number, default: null })
-  estimated_duration_minutes!: number | null;
+  @Prop({
+    type: [ServiceCatalogPartLineSchema],
+    default: [],
+  })
+  part_lines!: ServiceCatalogPartLine[];
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  labor_total!: number;
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  parts_total!: number;
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  total!: number;
 }
 
 export const ServiceCatalogSchema =
   SchemaFactory.createForClass(ServiceCatalog);
 
-ServiceCatalogSchema.index({ name: 1 }, { unique: true });
+ServiceCatalogSchema.index({ normalized_name: 1 });

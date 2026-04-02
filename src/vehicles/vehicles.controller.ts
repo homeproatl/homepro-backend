@@ -11,15 +11,12 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import type { AuthenticatedRequest } from '../auth/guards/auth.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { UserRole } from '../common/enums/user-role.enum';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { VehiclesService } from './vehicles.service';
 
 @Controller('vehicles')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(AuthGuard)
 export class VehiclesController {
   constructor(private readonly vehiclesService: VehiclesService) {}
 
@@ -44,19 +41,16 @@ export class VehiclesController {
   }
 
   @Patch(':id/archive')
-  @Roles(UserRole.SUPER_ADMIN)
   archive(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.vehiclesService.archive(id, request.user?.sub);
   }
 
   @Patch(':id/unarchive')
-  @Roles(UserRole.SUPER_ADMIN)
   unarchive(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.vehiclesService.unarchive(id, request.user?.sub);
   }
 
   @Delete(':id')
-  @Roles(UserRole.SUPER_ADMIN)
   remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.vehiclesService.remove(id, request.user?.sub);
   }

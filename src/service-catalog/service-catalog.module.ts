@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
-import { JobService, JobServiceSchema } from '../jobs/schemas/job-service.schema';
+import { Estimate, EstimateSchema } from '../estimates/schemas/estimate.schema';
 import {
   ServiceCatalog,
   ServiceCatalogSchema,
@@ -14,7 +14,7 @@ import { ServiceCatalogController } from './service-catalog.controller';
     AuthModule,
     MongooseModule.forFeature([
       { name: ServiceCatalog.name, schema: ServiceCatalogSchema },
-      { name: JobService.name, schema: JobServiceSchema },
+      { name: Estimate.name, schema: EstimateSchema },
     ]),
   ],
   controllers: [ServiceCatalogController],

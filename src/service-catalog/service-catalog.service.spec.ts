@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ServiceCatalogService } from './service-catalog.service';
 
 function createSessionMock() {
@@ -16,6 +16,26 @@ function createSessionExecMock<T>(value: T) {
 }
 
 describe('ServiceCatalogService', () => {
+  it('ensures the normalized-name index for canned-service duplicate checks', async () => {
+    const createIndex = jest.fn().mockResolvedValue(undefined);
+
+    const service = new ServiceCatalogService(
+      {
+        collection: {
+          createIndex,
+        },
+      } as never,
+      {} as never,
+    );
+
+    await service.onModuleInit();
+
+    expect(createIndex).toHaveBeenCalledWith(
+      { normalized_name: 1 },
+      { name: 'normalized_name_1' },
+    );
+  });
+
   it('upserts minimal catalog entries idempotently', async () => {
     const exec = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
     const updateOne = jest.fn().mockReturnValue({ exec });
@@ -26,15 +46,31 @@ describe('ServiceCatalogService', () => {
 
     await service.ensureMinimalCatalog();
 
-    expect(updateOne).toHaveBeenCalledTimes(3);
+    expect(updateOne).toHaveBeenCalledTimes(2);
     const [filter, update, options] = updateOne.mock.calls[0] as [
-      { name: string },
-      { $setOnInsert: { name: string } },
+      { normalized_name: string },
+      {
+        $setOnInsert: {
+          name: string;
+          normalized_name: string;
+          labor_lines: Array<{ description: string; subtotal: number }>;
+          part_lines: Array<{ name: string; subtotal: number }>;
+          labor_total: number;
+          parts_total: number;
+          total: number;
+        };
+      },
       { upsert: boolean },
     ];
-    expect(filter).toEqual({ name: 'Oil Change' });
+    expect(filter).toEqual({ normalized_name: 'oil change' });
     expect(update.$setOnInsert).toEqual(
-      expect.objectContaining({ name: 'Oil Change' }),
+      expect.objectContaining({
+        name: 'Oil Change',
+        normalized_name: 'oil change',
+        labor_total: 60,
+        parts_total: 45,
+        total: 105,
+      }),
     );
     expect(options).toEqual({ upsert: true });
   });
@@ -57,8 +93,11 @@ describe('ServiceCatalogService', () => {
                 toObject: () => ({
                   _id: 'service-1',
                   name: 'Oil Change',
-                  base_price: 50,
-                  estimated_duration_minutes: 45,
+                  labor_lines: [],
+                  part_lines: [],
+                  labor_total: 50,
+                  parts_total: 0,
+                  total: 50,
                 }),
               },
               {
@@ -66,9 +105,12 @@ describe('ServiceCatalogService', () => {
                 is_active: false,
                 toObject: () => ({
                   _id: 'service-2',
-                  name: 'Brake Job',
-                  base_price: 180,
-                  estimated_duration_minutes: 120,
+                  name: 'Brake Estimate',
+                  labor_lines: [],
+                  part_lines: [],
+                  labor_total: 180,
+                  parts_total: 0,
+                  total: 180,
                 }),
               },
             ]),
@@ -97,9 +139,8 @@ describe('ServiceCatalogService', () => {
     ]);
   });
 
-  it('blocks service deletion when job lines already reference the service', async () => {
+  it('blocks service deletion when estimate lines already reference the service', async () => {
     const session = createSessionMock();
-    const updateOne = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(undefined) });
     const service = new ServiceCatalogService(
       {
         db: {
@@ -111,7 +152,6 @@ describe('ServiceCatalogService', () => {
             is_active: true,
           }),
         ),
-        updateOne,
       } as never,
       {
         countDocuments: jest.fn().mockReturnValue(createSessionExecMock(2)),
@@ -121,11 +161,6 @@ describe('ServiceCatalogService', () => {
     await expect(
       service.remove('507f1f77bcf86cd799439013'),
     ).rejects.toBeInstanceOf(ConflictException);
-    expect(updateOne).toHaveBeenCalledWith(
-      { _id: '507f1f77bcf86cd799439013' },
-      { $set: { is_active: false }, $inc: { __v: 1 } },
-      expect.objectContaining({ session }),
-    );
     expect(session.endSession).toHaveBeenCalled();
   });
 
@@ -138,14 +173,20 @@ describe('ServiceCatalogService', () => {
             _id: '507f1f77bcf86cd799439013',
             name: 'Oil Change',
             is_active: true,
-            base_price: 50,
-            estimated_duration_minutes: 45,
+            labor_lines: [],
+            part_lines: [],
+            labor_total: 50,
+            parts_total: 0,
+            total: 50,
             toObject: () => ({
               _id: '507f1f77bcf86cd799439013',
               name: 'Oil Change',
               is_active: false,
-              base_price: 50,
-              estimated_duration_minutes: 45,
+              labor_lines: [],
+              part_lines: [],
+              labor_total: 50,
+              parts_total: 0,
+              total: 50,
             }),
             save,
           }),
@@ -200,5 +241,204 @@ describe('ServiceCatalogService', () => {
       { session },
     );
     expect(session.endSession).toHaveBeenCalled();
+  });
+
+  it('rejects empty canned services without labor or part rows', async () => {
+    const service = new ServiceCatalogService(
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+        create: jest.fn(),
+      } as never,
+      {} as never,
+    );
+
+    await expect(
+      service.create({
+        name: 'Empty Service',
+        labor_lines: [],
+        part_lines: [],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('warns before creating an identical canned service', async () => {
+    const service = new ServiceCatalogService(
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              {
+                _id: '507f1f77bcf86cd799439013',
+                name: 'Oil Change',
+                is_active: true,
+                labor_lines: [
+                  {
+                    description: 'Oil labor',
+                    hours: 1,
+                    rate: 100,
+                    discount_percent: 0,
+                  },
+                ],
+                part_lines: [],
+              },
+            ]),
+          }),
+        }),
+      } as never,
+      {} as never,
+    );
+
+    await expect(
+      service.create({
+        name: '  Oil   Change ',
+        labor_lines: [
+          {
+            description: 'Oil labor',
+            hours: 1,
+            rate: 100,
+            discount_percent: 0,
+          },
+        ],
+        part_lines: [],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('allows the same canned service name when the labor or part lines differ', async () => {
+    const create = jest.fn().mockResolvedValue({
+      _id: 'service-2',
+      name: 'Oil Change',
+      normalized_name: 'oil change',
+      is_active: true,
+      labor_lines: [],
+      part_lines: [],
+      labor_total: 100,
+      parts_total: 0,
+      total: 100,
+      toObject: () => ({
+        _id: 'service-2',
+        name: 'Oil Change',
+        normalized_name: 'oil change',
+        is_active: true,
+        labor_lines: [],
+        part_lines: [],
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+      }),
+    });
+
+    const service = new ServiceCatalogService(
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              {
+                _id: 'service-1',
+                name: 'Oil Change',
+                is_active: true,
+                labor_lines: [
+                  {
+                    description: 'Oil labor',
+                    hours: 1,
+                    rate: 90,
+                    discount_percent: 0,
+                  },
+                ],
+                part_lines: [],
+              },
+            ]),
+          }),
+        }),
+        create,
+      } as never,
+      {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
+      } as never,
+    );
+
+    await expect(
+      service.create({
+        name: 'Oil Change',
+        labor_lines: [
+          {
+            description: 'Oil labor',
+            hours: 1,
+            rate: 100,
+            discount_percent: 0,
+          },
+        ],
+        part_lines: [],
+      }),
+    ).resolves.toMatchObject({
+      name: 'Oil Change',
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Oil Change',
+        normalized_name: 'oil change',
+      }),
+    );
+  });
+
+  it('treats labor line order as identical when comparing duplicates', async () => {
+    const service = new ServiceCatalogService(
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              {
+                _id: '507f1f77bcf86cd799439013',
+                name: 'Brake Service',
+                is_active: true,
+                labor_lines: [
+                  {
+                    description: 'Install pads',
+                    hours: 1,
+                    rate: 120,
+                    discount_percent: 0,
+                  },
+                  {
+                    description: 'Road test',
+                    hours: 0.25,
+                    rate: 120,
+                    discount_percent: 0,
+                  },
+                ],
+                part_lines: [],
+              },
+            ]),
+          }),
+        }),
+      } as never,
+      {} as never,
+    );
+
+    await expect(
+      service.create({
+        name: 'Brake Service',
+        labor_lines: [
+          {
+            description: 'Road test',
+            hours: 0.25,
+            rate: 120,
+            discount_percent: 0,
+          },
+          {
+            description: 'Install pads',
+            hours: 1,
+            rate: 120,
+            discount_percent: 0,
+          },
+        ],
+        part_lines: [],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

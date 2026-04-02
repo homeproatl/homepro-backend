@@ -1,25 +1,82 @@
+import { Transform, Type } from 'class-transformer';
 import {
-  IsInt,
-  IsNumber,
+  ArrayMaxSize,
   IsOptional,
+  IsNumber,
   IsString,
+  MinLength,
+  MaxLength,
   Min,
-  ValidateIf,
+  Max,
+  ValidateNested,
 } from 'class-validator';
+
+class UpdateServiceLaborLineDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  description!: string;
+
+  @IsNumber()
+  @Min(0)
+  hours!: number;
+
+  @IsNumber()
+  @Min(0)
+  rate!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  discount_percent = 0;
+}
+
+class UpdateServicePartLineDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  name!: string;
+
+  @IsNumber()
+  @Min(1)
+  quantity!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  cost?: number | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  price!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  discount_percent = 0;
+}
 
 export class UpdateServiceDto {
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @MinLength(1)
+  @MaxLength(160)
   name?: string;
 
-  @ValidateIf((_object, value) => value !== undefined)
-  @IsNumber()
-  @Min(0)
-  base_price?: number;
-
-  @ValidateIf((_object, value) => value !== undefined)
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  estimated_duration_minutes?: number | null;
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateServiceLaborLineDto)
+  labor_lines?: UpdateServiceLaborLineDto[];
+
+  @IsOptional()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateServicePartLineDto)
+  part_lines?: UpdateServicePartLineDto[];
 }
