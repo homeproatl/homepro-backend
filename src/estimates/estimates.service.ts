@@ -46,6 +46,7 @@ type EstimateWorkflowSummary = {
   admin_invoice_workflow_detail: string;
 };
 
+// Dashboard rows are built from already-serialized estimate contracts.
 type DashboardSummaryEstimate = {
   id: string;
   estimate_status?: EstimateStatus;
