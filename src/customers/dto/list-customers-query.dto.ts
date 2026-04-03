@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 function normalizeSearchValue(value: unknown) {
   if (typeof value !== 'string') {
@@ -14,5 +14,6 @@ export class ListCustomersQueryDto {
   @IsOptional()
   @Transform(({ value }) => normalizeSearchValue(value))
   @IsString()
+  @MaxLength(120)
   search?: string;
 }

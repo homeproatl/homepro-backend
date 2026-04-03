@@ -250,13 +250,14 @@ export class CustomersService {
       .split(/\s+/)
       .map((token) => token.trim())
       .filter((token) => token.length > 0);
+    const boundedSearchTokens = searchTokens.slice(0, 6);
 
-    if (searchTokens.length === 0) {
+    if (boundedSearchTokens.length === 0) {
       return {};
     }
 
     return {
-      $and: searchTokens.map((token) => {
+      $and: boundedSearchTokens.map((token) => {
         const pattern = new RegExp(this.escapeRegExp(token), 'i');
         return {
           $or: [

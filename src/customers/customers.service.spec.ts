@@ -79,6 +79,35 @@ describe('CustomersService', () => {
     });
   });
 
+  it('bounds tokenized customer search clauses to avoid excessive regex fan-out', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ exec });
+    const find = jest.fn().mockReturnValue({ sort });
+    const service = new CustomersService(
+      {
+        find,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.findAll({
+      search: "one two three four five six seven eight",
+    });
+
+    expect(find).toHaveBeenCalledWith({
+      $and: [
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+      ],
+    });
+  });
+
   it('blocks customer deletion while vehicles or estimates still reference the customer', async () => {
     const customer = {
       _id: '507f1f77bcf86cd799439011',
