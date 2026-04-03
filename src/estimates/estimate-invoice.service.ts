@@ -128,6 +128,20 @@ type SerializedInvoiceSnapshot = InvoiceRenderPayload & {
   updated_at: string | null;
 };
 
+type SerializedInvoiceDispatch = {
+  id: string;
+  estimate_id: string;
+  invoice_snapshot_id: string;
+  recipient_email: string;
+  provider: string;
+  provider_message_id: string | null;
+  delivery_status: EstimateInvoiceDispatchStatus;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 type InvoiceAggregate = {
   estimate: EstimateDocument;
   customer: CustomerDocument;
@@ -798,15 +812,48 @@ export class EstimateInvoiceService implements OnModuleDestroy {
   private serializeSnapshot(
     snapshot: EstimateInvoiceSnapshotDocument,
   ): SerializedInvoiceSnapshot {
-    const raw = snapshot.toObject();
+    const raw = snapshot.toObject() as unknown as {
+      _id: unknown;
+      estimate_id: unknown;
+      invoice_number: string;
+      revision_number: number;
+      status: EstimateInvoiceSnapshotStatus;
+      customer_snapshot: InvoiceCustomerSnapshot;
+      vehicle_snapshot: InvoiceVehicleSnapshot;
+      services_snapshot: InvoiceServiceSnapshot[];
+      estimate_number_snapshot: string;
+      title_snapshot: string;
+      time_zone_snapshot: string | null;
+      total: number;
+      payment_status_snapshot: PaidStatus;
+      payment_type_snapshot: string;
+      due_date_snapshot: Date | string | null;
+      scheduled_start_snapshot: Date | string | null;
+      scheduled_end_snapshot: Date | string | null;
+      billable_hash: string;
+      issued_at: Date | string | null;
+      sent_at: Date | string | null;
+      stale_at: Date | string | null;
+      superseded_by_snapshot_id: unknown | null;
+      created_at: Date | string | null;
+      updated_at: Date | string | null;
+    };
 
     return {
-      ...raw,
       id: String(raw._id),
       estimate_id: String(raw.estimate_id),
+      invoice_number: raw.invoice_number,
+      revision_number: raw.revision_number,
+      status: raw.status,
+      billable_hash: raw.billable_hash,
+      estimate_number_snapshot: raw.estimate_number_snapshot,
+      title_snapshot: raw.title_snapshot,
       customer_snapshot: raw.customer_snapshot as InvoiceCustomerSnapshot,
       vehicle_snapshot: raw.vehicle_snapshot as InvoiceVehicleSnapshot,
       services_snapshot: raw.services_snapshot as InvoiceServiceSnapshot[],
+      total: raw.total,
+      payment_status_snapshot: raw.payment_status_snapshot,
+      payment_type_snapshot: raw.payment_type_snapshot,
       time_zone_snapshot:
         typeof raw.time_zone_snapshot === 'string'
           ? raw.time_zone_snapshot
@@ -838,13 +885,32 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     };
   }
 
-  private serializeDispatch(dispatch: EstimateInvoiceDispatchDocument) {
-    const raw = dispatch.toObject();
+  private serializeDispatch(
+    dispatch: EstimateInvoiceDispatchDocument,
+  ): SerializedInvoiceDispatch {
+    const raw = dispatch.toObject() as unknown as {
+      _id: unknown;
+      estimate_id: unknown;
+      invoice_snapshot_id: unknown;
+      recipient_email: string;
+      provider: string;
+      provider_message_id: string | null;
+      delivery_status: EstimateInvoiceDispatchStatus;
+      error_message: string | null;
+      sent_at: Date | string | null;
+      created_at: Date | string | null;
+      updated_at: Date | string | null;
+    };
+
     return {
-      ...raw,
       id: String(raw._id),
       estimate_id: String(raw.estimate_id),
       invoice_snapshot_id: String(raw.invoice_snapshot_id),
+      recipient_email: raw.recipient_email,
+      provider: raw.provider,
+      provider_message_id: raw.provider_message_id,
+      delivery_status: raw.delivery_status,
+      error_message: raw.error_message,
       sent_at: raw.sent_at ? new Date(raw.sent_at).toISOString() : null,
       created_at: raw.created_at
         ? new Date(raw.created_at).toISOString()

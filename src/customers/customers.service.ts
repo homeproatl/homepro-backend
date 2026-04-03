@@ -31,34 +31,32 @@ export class CustomersService {
   ) {}
 
   async create(payload: CreateCustomerDto) {
-    return this.customerModel.create({
+    const customer = await this.customerModel.create({
       ...payload,
       email: payload.email?.toLowerCase() ?? null,
     });
+
+    return this.toCustomerContract(customer);
   }
 
   async findAll(query: ListCustomersQueryDto = {}) {
     const searchQuery = this.buildSearchQuery(query.search);
 
-    return this.customerModel
+    const customers = await this.customerModel
       .find(searchQuery)
       .sort({ is_archived: 1, created_at: -1 })
       .exec();
+
+    return customers.map((customer) => this.toCustomerContract(customer));
   }
 
   async findById(id: string) {
-    const customer = await this.customerModel
-      .findById(asObjectId(id, 'customer id'))
-      .exec();
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
-
-    return customer;
+    const customer = await this.findCustomerDocumentById(id);
+    return this.toCustomerContract(customer);
   }
 
   async update(id: string, payload: UpdateCustomerDto) {
-    const customer = await this.findById(id);
+    const customer = await this.findCustomerDocumentById(id);
     if (payload.first_name !== undefined) {
       customer.first_name = payload.first_name;
     }
@@ -72,21 +70,23 @@ export class CustomersService {
       customer.email = payload.email?.toLowerCase() ?? null;
     }
     await customer.save();
-    return customer;
+    return this.toCustomerContract(customer);
   }
 
   async findVehicles(id: string) {
-    const customer = await this.findById(id);
-    return this.vehicleModel
+    const customer = await this.findCustomerDocumentById(id);
+    const vehicles = await this.vehicleModel
       .find({ customer_id: customer._id })
       .sort({ is_archived: 1, created_at: -1 })
       .exec();
+
+    return vehicles.map((vehicle) => this.toVehicleContract(vehicle));
   }
 
   async archive(id: string, actorUserId?: string) {
-    const customer = await this.findById(id);
+    const customer = await this.findCustomerDocumentById(id);
     if (customer.is_archived === true) {
-      return customer;
+      return this.toCustomerContract(customer);
     }
 
     const before = customer.toObject();
@@ -102,13 +102,13 @@ export class CustomersService {
       after: customer.toObject(),
     });
 
-    return customer;
+    return this.toCustomerContract(customer);
   }
 
   async unarchive(id: string, actorUserId?: string) {
-    const customer = await this.findById(id);
+    const customer = await this.findCustomerDocumentById(id);
     if (customer.is_archived !== true) {
-      return customer;
+      return this.toCustomerContract(customer);
     }
 
     const before = customer.toObject();
@@ -124,11 +124,11 @@ export class CustomersService {
       after: customer.toObject(),
     });
 
-    return customer;
+    return this.toCustomerContract(customer);
   }
 
   async remove(id: string, actorUserId?: string) {
-    const customer = await this.findById(id);
+    const customer = await this.findCustomerDocumentById(id);
     const before = customer.toObject();
     const [vehicleCount, estimateCount] = await Promise.all([
       this.vehicleModel.countDocuments({ customer_id: customer._id }).exec(),
@@ -185,6 +185,60 @@ export class CustomersService {
       before_json: input.before as Record<string, unknown> | null,
       after_json: input.after as Record<string, unknown> | null,
     });
+  }
+
+  private async findCustomerDocumentById(id: string) {
+    const customer = await this.customerModel
+      .findById(asObjectId(id, 'customer id'))
+      .exec();
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    return customer;
+  }
+
+  private toCustomerContract(customer: CustomerDocument) {
+    return {
+      id: String(customer._id),
+      first_name: customer.first_name,
+      last_name: customer.last_name,
+      phone: customer.phone,
+      email: customer.email ?? null,
+      is_archived: customer.is_archived === true,
+      created_at: this.toIsoString(
+        (customer as unknown as { created_at?: Date }).created_at,
+      ),
+      updated_at: this.toIsoString(
+        (customer as unknown as { updated_at?: Date }).updated_at,
+      ),
+    };
+  }
+
+  private toVehicleContract(vehicle: VehicleDocument) {
+    return {
+      id: String(vehicle._id),
+      customer_id: String(vehicle.customer_id),
+      is_archived: vehicle.is_archived === true,
+      color: vehicle.color ?? null,
+      year: vehicle.year ?? null,
+      make: vehicle.make,
+      model: vehicle.model,
+      sub_model: vehicle.sub_model ?? null,
+      mileage: vehicle.mileage ?? null,
+      vin: vehicle.vin,
+      license_plate: vehicle.license_plate,
+      created_at: this.toIsoString(
+        (vehicle as unknown as { created_at?: Date }).created_at,
+      ),
+      updated_at: this.toIsoString(
+        (vehicle as unknown as { updated_at?: Date }).updated_at,
+      ),
+    };
+  }
+
+  private toIsoString(value?: Date) {
+    return value?.toISOString();
   }
 
   private buildSearchQuery(search?: string) {

@@ -46,7 +46,7 @@ export class VehiclesService {
     }
 
     try {
-      return await this.vehicleModel.create({
+      const vehicle = await this.vehicleModel.create({
         customer_id: customer._id,
         is_archived: false,
         color: payload.color ?? null,
@@ -58,6 +58,8 @@ export class VehiclesService {
         vin: payload.vin,
         license_plate: payload.license_plate,
       });
+
+      return this.toVehicleContract(vehicle);
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
         throw new ConflictException(
@@ -69,24 +71,21 @@ export class VehiclesService {
   }
 
   async findAll() {
-    return this.vehicleModel
+    const vehicles = await this.vehicleModel
       .find()
       .sort({ is_archived: 1, created_at: -1 })
       .exec();
+
+    return vehicles.map((vehicle) => this.toVehicleContract(vehicle));
   }
 
   async findById(id: string) {
-    const vehicle = await this.vehicleModel
-      .findById(asObjectId(id, 'vehicle id'))
-      .exec();
-    if (!vehicle) {
-      throw new NotFoundException('Vehicle not found');
-    }
-    return vehicle;
+    const vehicle = await this.findVehicleDocumentById(id);
+    return this.toVehicleContract(vehicle);
   }
 
   async update(id: string, payload: UpdateVehicleDto) {
-    const vehicle = await this.findById(id);
+    const vehicle = await this.findVehicleDocumentById(id);
 
     if (payload.customer_id) {
       const customer = await this.customerModel
@@ -119,7 +118,7 @@ export class VehiclesService {
 
     try {
       await vehicle.save();
-      return vehicle;
+      return this.toVehicleContract(vehicle);
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
         throw new ConflictException(
@@ -131,9 +130,9 @@ export class VehiclesService {
   }
 
   async archive(id: string, actorUserId?: string) {
-    const vehicle = await this.findById(id);
+    const vehicle = await this.findVehicleDocumentById(id);
     if (vehicle.is_archived === true) {
-      return vehicle;
+      return this.toVehicleContract(vehicle);
     }
 
     const before = vehicle.toObject();
@@ -149,13 +148,13 @@ export class VehiclesService {
       after: vehicle.toObject(),
     });
 
-    return vehicle;
+    return this.toVehicleContract(vehicle);
   }
 
   async unarchive(id: string, actorUserId?: string) {
-    const vehicle = await this.findById(id);
+    const vehicle = await this.findVehicleDocumentById(id);
     if (vehicle.is_archived !== true) {
-      return vehicle;
+      return this.toVehicleContract(vehicle);
     }
 
     const owner = await this.customerModel.findById(vehicle.customer_id).exec();
@@ -181,11 +180,11 @@ export class VehiclesService {
       after: vehicle.toObject(),
     });
 
-    return vehicle;
+    return this.toVehicleContract(vehicle);
   }
 
   async remove(id: string, actorUserId?: string) {
-    const vehicle = await this.findById(id);
+    const vehicle = await this.findVehicleDocumentById(id);
     const before = vehicle.toObject();
     const estimateCount = await this.estimateModel
       .countDocuments({ vehicle_id: vehicle._id })
@@ -229,5 +228,42 @@ export class VehiclesService {
       before_json: (input.before ?? null) as Record<string, unknown> | null,
       after_json: (input.after ?? null) as Record<string, unknown> | null,
     });
+  }
+
+  private async findVehicleDocumentById(id: string) {
+    const vehicle = await this.vehicleModel
+      .findById(asObjectId(id, 'vehicle id'))
+      .exec();
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    return vehicle;
+  }
+
+  private toVehicleContract(vehicle: VehicleDocument) {
+    return {
+      id: String(vehicle._id),
+      customer_id: String(vehicle.customer_id),
+      is_archived: vehicle.is_archived === true,
+      color: vehicle.color ?? null,
+      year: vehicle.year ?? null,
+      make: vehicle.make,
+      model: vehicle.model,
+      sub_model: vehicle.sub_model ?? null,
+      mileage: vehicle.mileage ?? null,
+      vin: vehicle.vin,
+      license_plate: vehicle.license_plate,
+      created_at: this.toIsoString(
+        (vehicle as unknown as { created_at?: Date }).created_at,
+      ),
+      updated_at: this.toIsoString(
+        (vehicle as unknown as { updated_at?: Date }).updated_at,
+      ),
+    };
+  }
+
+  private toIsoString(value?: Date) {
+    return value?.toISOString();
   }
 }

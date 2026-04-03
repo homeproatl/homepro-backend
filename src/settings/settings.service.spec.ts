@@ -3,8 +3,14 @@ import { SettingsService } from './settings.service';
 
 describe('SettingsService', () => {
   it('creates app settings with the configured default timezone using an atomic upsert', async () => {
+    const createdAt = new Date('2026-04-03T08:00:00.000Z');
+    const updatedAt = new Date('2026-04-03T09:00:00.000Z');
     const findOneAndUpdate = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({
+        singleton_key: 'app',
+        business_timezone: 'America/Chicago',
+        created_at: createdAt,
+        updated_at: updatedAt,
         toObject: () => ({
           singleton_key: 'app',
           business_timezone: 'America/Chicago',
@@ -35,7 +41,12 @@ describe('SettingsService', () => {
         setDefaultsOnInsert: true,
       },
     );
-    expect(settings.business_timezone).toBe('America/Chicago');
+    expect(settings).toEqual({
+      id: 'app',
+      business_timezone: 'America/Chicago',
+      created_at: createdAt.toISOString(),
+      updated_at: updatedAt.toISOString(),
+    });
   });
 
   it('rejects invalid timezones during update', async () => {

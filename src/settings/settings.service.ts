@@ -20,7 +20,7 @@ export class SettingsService {
 
   async getAppSettings() {
     const settings = await this.findOrCreateSettings();
-    return settings.toObject();
+    return this.toAppSettingsContract(settings);
   }
 
   async updateAppSettings(payload: UpdateAppSettingsDto) {
@@ -32,7 +32,7 @@ export class SettingsService {
     }
 
     await settings.save();
-    return settings.toObject();
+    return this.toAppSettingsContract(settings);
   }
 
   private async findOrCreateSettings() {
@@ -78,6 +78,19 @@ export class SettingsService {
 
     this.assertValidTimeZone(businessTimeZone);
     return businessTimeZone;
+  }
+
+  private toAppSettingsContract(settings: AppSettingsDocument) {
+    return {
+      id: settings.singleton_key,
+      business_timezone: settings.business_timezone,
+      created_at: (
+        settings as unknown as { created_at?: Date }
+      ).created_at?.toISOString(),
+      updated_at: (
+        settings as unknown as { updated_at?: Date }
+      ).updated_at?.toISOString(),
+    };
   }
 
   private assertValidTimeZone(value: string) {

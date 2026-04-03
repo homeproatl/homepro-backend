@@ -47,8 +47,7 @@ type EstimateWorkflowSummary = {
 };
 
 type DashboardSummaryEstimate = {
-  _id?: unknown;
-  id?: string;
+  id: string;
   estimate_status?: EstimateStatus;
   payment_status?: PaidStatus;
   total?: number;
@@ -547,15 +546,18 @@ export class EstimatesService {
     estimate: EstimateDocument | (Estimate & { _id: unknown }),
     billingSummary?: EstimateBillingSummary,
   ) {
-    const objectValue =
+    const rawEstimate =
       typeof (estimate as EstimateDocument).toObject === 'function'
-        ? (estimate as EstimateDocument).toObject()
+        ? ((estimate as EstimateDocument).toObject() as unknown as Record<
+            string,
+            unknown
+          >)
         : (estimate as unknown as Record<string, unknown>);
 
-    const dueDate = objectValue.due_date
-      ? new Date(objectValue.due_date as string | Date)
+    const dueDate = rawEstimate.due_date
+      ? new Date(rawEstimate.due_date as string | Date)
       : null;
-    const paymentStatus = objectValue.payment_status as PaidStatus;
+    const paymentStatus = rawEstimate.payment_status as PaidStatus;
     const isOverdue =
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
@@ -572,11 +574,133 @@ export class EstimatesService {
     );
 
     return {
-      ...objectValue,
+      id: this.serializeId(rawEstimate._id, 'estimate id'),
+      estimate_number:
+        typeof rawEstimate.estimate_number === 'string'
+          ? rawEstimate.estimate_number
+          : '',
+      title: typeof rawEstimate.title === 'string' ? rawEstimate.title : '',
+      customer_id: this.serializeId(rawEstimate.customer_id, 'customer id'),
+      vehicle_id: this.serializeId(rawEstimate.vehicle_id, 'vehicle id'),
+      scheduled_start: this.toIsoString(
+        rawEstimate.scheduled_start as Date | string | null | undefined,
+      ),
+      scheduled_end: this.toIsoString(
+        rawEstimate.scheduled_end as Date | string | null | undefined,
+      ),
+      assigned_user_id: this.serializeNullableId(
+        rawEstimate.assigned_user_id,
+        'assigned user id',
+      ),
+      complaint_or_request:
+        typeof rawEstimate.complaint_or_request === 'string'
+          ? rawEstimate.complaint_or_request
+          : null,
+      notes: typeof rawEstimate.notes === 'string' ? rawEstimate.notes : null,
+      estimate_status: rawEstimate.estimate_status as EstimateStatus,
+      payment_status: paymentStatus,
+      payment_type: rawEstimate.payment_type as PaymentType,
+      due_date: this.toIsoString(
+        rawEstimate.due_date as Date | string | null | undefined,
+      ),
+      services: this.serializeServices(
+        rawEstimate.services as Array<Record<string, unknown>> | undefined,
+      ),
+      labor_total:
+        typeof rawEstimate.labor_total === 'number' ? rawEstimate.labor_total : 0,
+      parts_total:
+        typeof rawEstimate.parts_total === 'number' ? rawEstimate.parts_total : 0,
+      total: typeof rawEstimate.total === 'number' ? rawEstimate.total : 0,
+      created_at: this.toIsoString(
+        rawEstimate.created_at as Date | string | null | undefined,
+      ),
+      updated_at: this.toIsoString(
+        rawEstimate.updated_at as Date | string | null | undefined,
+      ),
       is_overdue: isOverdue,
       ...resolvedBillingSummary,
       ...workflowSummary,
     };
+  }
+
+  private serializeServices(services?: Array<Record<string, unknown>>) {
+    return (services ?? []).map((service) => ({
+      id: this.serializeId(service._id, 'estimate service id'),
+      canned_service_id: this.serializeNullableId(
+        service.canned_service_id,
+        'canned service id',
+      ),
+      name: typeof service.name === 'string' ? service.name : '',
+      labor_lines: this.serializeLaborLines(
+        service.labor_lines as Array<Record<string, unknown>> | undefined,
+      ),
+      part_lines: this.serializePartLines(
+        service.part_lines as Array<Record<string, unknown>> | undefined,
+      ),
+      labor_total: typeof service.labor_total === 'number' ? service.labor_total : 0,
+      parts_total: typeof service.parts_total === 'number' ? service.parts_total : 0,
+      total: typeof service.total === 'number' ? service.total : 0,
+    }));
+  }
+
+  private serializeLaborLines(lines?: Array<Record<string, unknown>>) {
+    return (lines ?? []).map((line) => ({
+      id: this.serializeId(line._id, 'estimate labor line id'),
+      description: typeof line.description === 'string' ? line.description : '',
+      assigned_user_id: this.serializeNullableId(
+        line.assigned_user_id,
+        'estimate labor technician id',
+      ),
+      hours: typeof line.hours === 'number' ? line.hours : 0,
+      rate: typeof line.rate === 'number' ? line.rate : 0,
+      discount_percent:
+        typeof line.discount_percent === 'number' ? line.discount_percent : 0,
+      subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+    }));
+  }
+
+  private serializePartLines(lines?: Array<Record<string, unknown>>) {
+    return (lines ?? []).map((line) => ({
+      id: this.serializeId(line._id, 'estimate part line id'),
+      name: typeof line.name === 'string' ? line.name : '',
+      quantity: typeof line.quantity === 'number' ? line.quantity : 0,
+      cost: typeof line.cost === 'number' ? line.cost : null,
+      price: typeof line.price === 'number' ? line.price : 0,
+      discount_percent:
+        typeof line.discount_percent === 'number' ? line.discount_percent : 0,
+      subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+    }));
+  }
+
+  private serializeId(value: unknown, context: string) {
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+
+    if (value && typeof value === 'object' && typeof value.toString === 'function') {
+      const serialized = value.toString();
+      if (serialized && serialized !== '[object Object]') {
+        return serialized;
+      }
+    }
+
+    throw new Error(`Invalid ${context}`);
+  }
+
+  private serializeNullableId(value: unknown, context: string) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    return this.serializeId(value, context);
+  }
+
+  private toIsoString(value?: Date | string | null) {
+    if (!value) {
+      return null;
+    }
+
+    return value instanceof Date ? value.toISOString() : value;
   }
 
   private async withBillingSummaries(
@@ -654,7 +778,7 @@ export class EstimatesService {
     ) {
       return {
         admin_invoice_workflow_state: 'sent',
-        admin_invoice_workflow_title: 'Accepted',
+        admin_invoice_workflow_title: 'Invoice Accepted',
         admin_invoice_workflow_detail:
           billingSummary.latest_invoice_number ??
           'Latest invoice accepted by provider',
@@ -705,7 +829,7 @@ export class EstimatesService {
     const overviewEstimates: DashboardSummaryEstimate[] = [];
 
     for (const estimate of prioritizedEstimates) {
-      const estimateId = String(estimate.id ?? estimate._id);
+      const estimateId = estimate.id;
       if (seenEstimateIds.has(estimateId)) {
         continue;
       }

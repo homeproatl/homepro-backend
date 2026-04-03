@@ -2,6 +2,46 @@ import { ConflictException } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 
 describe('CustomersService', () => {
+  it('serializes customer responses with id instead of Mongo internals', async () => {
+    const createdAt = new Date('2026-04-03T08:00:00.000Z');
+    const updatedAt = new Date('2026-04-03T09:00:00.000Z');
+    const service = new CustomersService(
+      {
+        create: jest.fn().mockResolvedValue({
+          _id: '507f1f77bcf86cd799439099',
+          first_name: 'Rico',
+          last_name: 'Owner',
+          phone: '123',
+          email: 'rico@example.com',
+          is_archived: false,
+          created_at: createdAt,
+          updated_at: updatedAt,
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.create({
+        first_name: 'Rico',
+        last_name: 'Owner',
+        phone: '123',
+        email: 'rico@example.com',
+      }),
+    ).resolves.toEqual({
+      id: '507f1f77bcf86cd799439099',
+      first_name: 'Rico',
+      last_name: 'Owner',
+      phone: '123',
+      email: 'rico@example.com',
+      is_archived: false,
+      created_at: createdAt.toISOString(),
+      updated_at: updatedAt.toISOString(),
+    });
+  });
+
   it('builds a tokenized search query for customer list filtering', async () => {
     const exec = jest.fn().mockResolvedValue([]);
     const sort = jest.fn().mockReturnValue({ exec });
@@ -129,7 +169,7 @@ describe('CustomersService', () => {
     await expect(
       service.archive('507f1f77bcf86cd799439011'),
     ).resolves.toMatchObject({
-      _id: '507f1f77bcf86cd799439011',
+      id: '507f1f77bcf86cd799439011',
       is_archived: true,
     });
     expect(save).toHaveBeenCalled();

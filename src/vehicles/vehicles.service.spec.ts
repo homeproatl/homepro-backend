@@ -2,6 +2,51 @@ import { ConflictException } from '@nestjs/common';
 import { VehiclesService } from './vehicles.service';
 
 describe('VehiclesService', () => {
+  it('serializes vehicle responses with id instead of Mongo internals', async () => {
+    const createdAt = new Date('2026-04-03T08:00:00.000Z');
+    const updatedAt = new Date('2026-04-03T09:00:00.000Z');
+    const service = new VehiclesService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: '507f1f77bcf86cd799439012',
+            customer_id: '507f1f77bcf86cd799439010',
+            is_archived: false,
+            color: 'Black',
+            year: 2020,
+            make: 'Honda',
+            model: 'Accord',
+            sub_model: null,
+            mileage: 40000,
+            vin: 'VIN123',
+            license_plate: 'ABC123',
+            created_at: createdAt,
+            updated_at: updatedAt,
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.findById('507f1f77bcf86cd799439012')).resolves.toEqual({
+      id: '507f1f77bcf86cd799439012',
+      customer_id: '507f1f77bcf86cd799439010',
+      is_archived: false,
+      color: 'Black',
+      year: 2020,
+      make: 'Honda',
+      model: 'Accord',
+      sub_model: null,
+      mileage: 40000,
+      vin: 'VIN123',
+      license_plate: 'ABC123',
+      created_at: createdAt.toISOString(),
+      updated_at: updatedAt.toISOString(),
+    });
+  });
+
   it('blocks vehicle deletion while estimates still reference the vehicle', async () => {
     const service = new VehiclesService(
       {

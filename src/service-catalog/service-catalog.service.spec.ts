@@ -127,16 +127,17 @@ describe('ServiceCatalogService', () => {
     expect(aggregate).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       expect.objectContaining({
-        _id: 'service-1',
+        id: 'service-1',
         is_active: true,
         usage_count: 2,
       }),
       expect.objectContaining({
-        _id: 'service-2',
+        id: 'service-2',
         is_active: false,
         usage_count: 0,
       }),
     ]);
+    expect(result[0]).not.toHaveProperty('normalized_name');
   });
 
   it('blocks service deletion when estimate lines already reference the service', async () => {
@@ -377,6 +378,7 @@ describe('ServiceCatalogService', () => {
         part_lines: [],
       }),
     ).resolves.toMatchObject({
+      id: 'service-2',
       name: 'Oil Change',
     });
     expect(create).toHaveBeenCalledWith(

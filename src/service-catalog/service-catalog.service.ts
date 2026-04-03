@@ -75,8 +75,32 @@ const MINIMAL_SERVICES: SeedService[] = [
 ];
 
 type SerializedServiceCatalog = Record<string, unknown> & {
+  id: string;
+  name: string;
   usage_count: number;
   is_active: boolean;
+  labor_lines: Array<{
+    id: string;
+    description: string;
+    hours: number;
+    rate: number;
+    discount_percent: number;
+    subtotal: number;
+  }>;
+  part_lines: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    cost: number | null;
+    price: number;
+    discount_percent: number;
+    subtotal: number;
+  }>;
+  labor_total: number;
+  parts_total: number;
+  total: number;
+  created_at?: string;
+  updated_at?: string;
 };
 
 @Injectable()
@@ -315,10 +339,26 @@ export class ServiceCatalogService implements OnModuleInit {
   private async serializeService(
     service: ServiceCatalogDocument,
   ): Promise<SerializedServiceCatalog> {
+    const raw = service.toObject() as unknown as Record<string, unknown> & {
+      _id?: unknown;
+      labor_lines?: Array<Record<string, unknown>>;
+      part_lines?: Array<Record<string, unknown>>;
+      created_at?: Date | string;
+      updated_at?: Date | string;
+    };
+
     return {
-      ...((service.toObject() as unknown) as Record<string, unknown>),
+      id: this.serializeId(raw._id, 'canned service id'),
+      name: service.name,
       is_active: service.is_active !== false,
+      labor_lines: this.serializeLaborLines(raw.labor_lines),
+      part_lines: this.serializePartLines(raw.part_lines),
+      labor_total: service.labor_total,
+      parts_total: service.parts_total,
+      total: service.total,
       usage_count: await this.getUsageCount(service._id),
+      created_at: this.toIsoString(raw.created_at),
+      updated_at: this.toIsoString(raw.updated_at),
     };
   }
 
@@ -327,11 +367,77 @@ export class ServiceCatalogService implements OnModuleInit {
       services.map((service) => service._id),
     );
 
-    return services.map((service) => ({
-      ...((service.toObject() as unknown) as Record<string, unknown>),
-      is_active: service.is_active !== false,
-      usage_count: usageCounts.get(String(service._id)) ?? 0,
+    return services.map((service) => {
+      const raw = service.toObject() as unknown as Record<string, unknown> & {
+        _id?: unknown;
+        labor_lines?: Array<Record<string, unknown>>;
+        part_lines?: Array<Record<string, unknown>>;
+        created_at?: Date | string;
+        updated_at?: Date | string;
+      };
+
+      return {
+        id: this.serializeId(raw._id, 'canned service id'),
+        name: service.name,
+        is_active: service.is_active !== false,
+        labor_lines: this.serializeLaborLines(raw.labor_lines),
+        part_lines: this.serializePartLines(raw.part_lines),
+        labor_total: service.labor_total,
+        parts_total: service.parts_total,
+        total: service.total,
+        usage_count: usageCounts.get(String(service._id)) ?? 0,
+        created_at: this.toIsoString(raw.created_at),
+        updated_at: this.toIsoString(raw.updated_at),
+      };
+    });
+  }
+
+  private serializeLaborLines(lines?: Array<Record<string, unknown>>) {
+    return (lines ?? []).map((line) => ({
+      id: this.serializeId(line._id, 'canned service labor line id'),
+      description: typeof line.description === 'string' ? line.description : '',
+      hours: typeof line.hours === 'number' ? line.hours : 0,
+      rate: typeof line.rate === 'number' ? line.rate : 0,
+      discount_percent:
+        typeof line.discount_percent === 'number' ? line.discount_percent : 0,
+      subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
     }));
+  }
+
+  private serializePartLines(lines?: Array<Record<string, unknown>>) {
+    return (lines ?? []).map((line) => ({
+      id: this.serializeId(line._id, 'canned service part line id'),
+      name: typeof line.name === 'string' ? line.name : '',
+      quantity: typeof line.quantity === 'number' ? line.quantity : 0,
+      cost: typeof line.cost === 'number' ? line.cost : null,
+      price: typeof line.price === 'number' ? line.price : 0,
+      discount_percent:
+        typeof line.discount_percent === 'number' ? line.discount_percent : 0,
+      subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+    }));
+  }
+
+  private serializeId(value: unknown, context: string) {
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+
+    if (value && typeof value === 'object' && typeof value.toString === 'function') {
+      const serialized = value.toString();
+      if (serialized && serialized !== '[object Object]') {
+        return serialized;
+      }
+    }
+
+    throw new Error(`Invalid ${context}`);
+  }
+
+  private toIsoString(value?: Date | string) {
+    if (!value) {
+      return undefined;
+    }
+
+    return value instanceof Date ? value.toISOString() : value;
   }
 
   async ensureMinimalCatalog(): Promise<void> {

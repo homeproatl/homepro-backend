@@ -118,12 +118,14 @@ describe('EstimatesService', () => {
     expect(query.customer_id.toString()).toBe('507f1f77bcf86cd799439011');
     expect(query.vehicle_id.toString()).toBe('507f1f77bcf86cd799439012');
     expect(result[0]).toMatchObject({
+      id: 'estimate-1',
       customer_id: '507f1f77bcf86cd799439011',
       vehicle_id: '507f1f77bcf86cd799439012',
       total: 150,
       invoice_ready: true,
       send_ready: true,
     });
+    expect(result[0]).not.toHaveProperty('_id');
   });
 
   it('returns backend-derived admin invoice workflow labels on estimate rows', async () => {
@@ -275,8 +277,24 @@ describe('EstimatesService', () => {
       payment_status: PaidStatus.UNPAID,
       services: [],
       toObject: jest.fn().mockImplementation(() => ({
-        _id: '507f1f77bcf86cd799439011',
+        _id: estimate._id,
+        estimate_number: 'EST-100',
+        title: estimate.title,
+        customer_id: estimate.customer_id,
+        vehicle_id: estimate.vehicle_id,
+        assigned_user_id: estimate.assigned_user_id,
+        complaint_or_request: estimate.complaint_or_request,
+        notes: estimate.notes,
+        payment_type: estimate.payment_type,
+        due_date: estimate.due_date,
         estimate_status: estimate.estimate_status,
+        payment_status: estimate.payment_status,
+        services: estimate.services,
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
+        created_at: new Date('2026-04-03T08:00:00.000Z'),
+        updated_at: new Date('2026-04-03T08:30:00.000Z'),
       })),
       save,
     };
@@ -352,10 +370,12 @@ describe('EstimatesService', () => {
       payment_status: PaidStatus.UNPAID,
       services: [
         {
+          _id: 'estimate-service-1',
           canned_service_id: 'service-1',
           name: 'Oil Change',
           labor_lines: [
             {
+              _id: 'labor-line-1',
               description: 'Oil labor',
               assigned_user_id: 'tech-1',
               hours: 1,
@@ -368,6 +388,44 @@ describe('EstimatesService', () => {
       ],
       toObject: jest.fn().mockReturnValue({
         _id: '507f1f77bcf86cd799439011',
+        estimate_number: 'EST-101',
+        title: 'Oil Service',
+        customer_id: '507f1f77bcf86cd799439012',
+        vehicle_id: '507f1f77bcf86cd799439013',
+        assigned_user_id: null,
+        complaint_or_request: null,
+        notes: null,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        estimate_status: EstimateStatus.SCHEDULED,
+        payment_status: PaidStatus.UNPAID,
+        services: [
+          {
+            _id: 'estimate-service-1',
+            canned_service_id: 'service-1',
+            name: 'Oil Change',
+            labor_lines: [
+              {
+                _id: 'labor-line-1',
+                description: 'Oil labor',
+                assigned_user_id: 'tech-1',
+                hours: 1,
+                rate: 100,
+                discount_percent: 0,
+                subtotal: 100,
+              },
+            ],
+            part_lines: [],
+            labor_total: 100,
+            parts_total: 0,
+            total: 100,
+          },
+        ],
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        created_at: new Date('2026-04-03T08:00:00.000Z'),
+        updated_at: new Date('2026-04-03T08:30:00.000Z'),
       }),
     };
 

@@ -204,4 +204,103 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Invoice INV-123456');
     expect(html).toContain('Amount due');
   });
+
+  it('serializes invoice snapshots without leaking raw Mongo fields', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        serializeSnapshot: (snapshot: {
+          toObject: () => Record<string, unknown>;
+        }) => Record<string, unknown>;
+      }
+    ).serializeSnapshot({
+      toObject: () => ({
+        _id: 'snapshot-1',
+        __v: 0,
+        estimate_id: 'estimate-1',
+        invoice_number: 'INV-100',
+        revision_number: 2,
+        status: 'ISSUED',
+        customer_snapshot: {
+          customer_id: 'customer-1',
+          name: 'Rico Customer',
+          email: 'customer@example.com',
+          phone: '123',
+        },
+        vehicle_snapshot: {
+          vehicle_id: 'vehicle-1',
+          label: '2020 Honda Accord',
+          vin: 'VIN123',
+          license_plate: 'ABC123',
+        },
+        services_snapshot: [],
+        estimate_number_snapshot: 'EST-100',
+        title_snapshot: 'Brake Estimate',
+        time_zone_snapshot: 'America/New_York',
+        total: 250,
+        payment_status_snapshot: 'UNPAID',
+        payment_type_snapshot: 'POS_CARD',
+        due_date_snapshot: null,
+        scheduled_start_snapshot: null,
+        scheduled_end_snapshot: null,
+        billable_hash: 'hash-1',
+        issued_at: '2026-04-03T08:00:00.000Z',
+        sent_at: null,
+        stale_at: null,
+        superseded_by_snapshot_id: null,
+        created_at: '2026-04-03T08:00:00.000Z',
+        updated_at: '2026-04-03T08:05:00.000Z',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      id: 'snapshot-1',
+      estimate_id: 'estimate-1',
+      invoice_number: 'INV-100',
+      revision_number: 2,
+      status: 'ISSUED',
+      billable_hash: 'hash-1',
+    });
+    expect(result).not.toHaveProperty('_id');
+    expect(result).not.toHaveProperty('__v');
+  });
+
+  it('serializes invoice dispatches without leaking internal request fields', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        serializeDispatch: (dispatch: {
+          toObject: () => Record<string, unknown>;
+        }) => Record<string, unknown>;
+      }
+    ).serializeDispatch({
+      toObject: () => ({
+        _id: 'dispatch-1',
+        __v: 0,
+        estimate_id: 'estimate-1',
+        invoice_snapshot_id: 'snapshot-1',
+        recipient_email: 'customer@example.com',
+        provider: 'resend',
+        provider_message_id: 'msg-1',
+        provider_request_key: 'internal-key',
+        delivery_status: 'ACCEPTED',
+        error_message: null,
+        sent_at: '2026-04-03T08:10:00.000Z',
+        created_at: '2026-04-03T08:10:00.000Z',
+        updated_at: '2026-04-03T08:11:00.000Z',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      id: 'dispatch-1',
+      estimate_id: 'estimate-1',
+      invoice_snapshot_id: 'snapshot-1',
+      delivery_status: 'ACCEPTED',
+    });
+    expect(result).not.toHaveProperty('_id');
+    expect(result).not.toHaveProperty('__v');
+    expect(result).not.toHaveProperty('provider_request_key');
+  });
 });
