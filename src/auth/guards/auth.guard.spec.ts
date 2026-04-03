@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../../users/users.service';
 import { AuthGuard } from './auth.guard';
+import { JWT_ALGORITHM, JWT_AUDIENCE, JWT_ISSUER } from '../auth.constants';
 
 describe('AuthGuard', () => {
   it('rejects requests without bearer token', async () => {
@@ -56,6 +57,12 @@ describe('AuthGuard', () => {
     } as never;
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(jwtService.verify).toHaveBeenCalledWith('token', {
+      secret: 'secret',
+      algorithms: [JWT_ALGORITHM],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
     expect(request.user).toEqual(payload);
   });
 

@@ -3,8 +3,6 @@ import type { Request, Response } from 'express';
 
 const REFRESH_COOKIE_NAME = 'rico_refresh_token';
 
-type SameSiteSetting = 'lax' | 'none';
-
 function parseDurationToMs(value: string) {
   const normalized = value.trim().toLowerCase();
   const match = normalized.match(/^(\d+)(ms|s|m|h|d)?$/);
@@ -34,12 +32,11 @@ function parseDurationToMs(value: string) {
 
 function getRefreshCookieOptions(configService: ConfigService) {
   const isProduction = configService.get<string>('NODE_ENV') === 'production';
-  const sameSite: SameSiteSetting = isProduction ? 'none' : 'lax';
 
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite,
+    sameSite: 'lax',
     path: '/',
     maxAge: parseDurationToMs(
       configService.getOrThrow<string>('JWT_REFRESH_TTL'),

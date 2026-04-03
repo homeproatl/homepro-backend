@@ -6,6 +6,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { LoginDto } from './dto/login.dto';
+import { JWT_ALGORITHM, JWT_AUDIENCE, JWT_ISSUER } from './auth.constants';
 
 type AuthTokens = {
   accessToken: string;
@@ -79,6 +80,9 @@ export class AuthService {
         token_version?: number;
       }>(refreshToken, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        algorithms: [JWT_ALGORITHM],
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
       });
 
       if (payload.type !== 'refresh') {
@@ -149,6 +153,9 @@ export class AuthService {
         expiresIn: this.configService.getOrThrow<string>(
           'JWT_ACCESS_TTL',
         ) as never,
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
       },
     );
 
@@ -165,6 +172,9 @@ export class AuthService {
         expiresIn: this.configService.getOrThrow<string>(
           'JWT_REFRESH_TTL',
         ) as never,
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
       },
     );
 

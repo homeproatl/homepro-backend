@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { JWT_ALGORITHM, JWT_AUDIENCE, JWT_ISSUER } from './auth.constants';
 
 describe('AuthService', () => {
   it('increments token version on logout so older refresh tokens are invalidated', async () => {
@@ -118,6 +119,42 @@ describe('AuthService', () => {
       accessToken: 'next-access-token',
       refreshToken: 'next-refresh-token',
     });
+    expect(jwtService.verify).toHaveBeenCalledWith('current-refresh-token', {
+      secret: 'refresh-secret',
+      algorithms: [JWT_ALGORITHM],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
+    expect(jwtService.signAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sub: user.id,
+        type: 'access',
+        token_version: 4,
+      }),
+      expect.objectContaining({
+        secret: 'access-secret',
+        expiresIn: '15m',
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      }),
+    );
+    expect(jwtService.signAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sub: user.id,
+        type: 'refresh',
+        token_version: 4,
+      }),
+      expect.objectContaining({
+        secret: 'refresh-secret',
+        expiresIn: '7d',
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      }),
+    );
     expect(user.refresh_token_hash).toBe(
       createHash('sha256').update('next-refresh-token').digest('hex'),
     );
