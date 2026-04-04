@@ -20,6 +20,7 @@ describe('VehiclesService', () => {
             mileage: 40000,
             vin: 'VIN123',
             license_plate: 'ABC123',
+            is_incomplete: false,
             created_at: createdAt,
             updated_at: updatedAt,
           }),
@@ -42,8 +43,42 @@ describe('VehiclesService', () => {
       mileage: 40000,
       vin: 'VIN123',
       license_plate: 'ABC123',
+      is_incomplete: false,
       created_at: createdAt.toISOString(),
       updated_at: updatedAt.toISOString(),
+    });
+  });
+
+  it('serializes incomplete vehicle responses with nullable identifiers', async () => {
+    const service = new VehiclesService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: '507f1f77bcf86cd799439012',
+            customer_id: '507f1f77bcf86cd799439010',
+            is_archived: false,
+            color: null,
+            year: 2020,
+            make: 'Honda',
+            model: 'Accord',
+            sub_model: null,
+            mileage: 40000,
+            vin: null,
+            license_plate: null,
+            is_incomplete: false,
+          }),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.findById('507f1f77bcf86cd799439012')).resolves.toMatchObject({
+      id: '507f1f77bcf86cd799439012',
+      vin: null,
+      license_plate: null,
+      is_incomplete: true,
     });
   });
 

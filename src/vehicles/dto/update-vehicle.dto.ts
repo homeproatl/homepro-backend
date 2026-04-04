@@ -34,10 +34,10 @@ export class UpdateVehicleDto {
   @IsOptional()
   @IsString()
   @MaxLength(32)
-  vin?: string;
+  vin?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(20)
-  license_plate?: string;
+  license_plate?: string | null;
 }

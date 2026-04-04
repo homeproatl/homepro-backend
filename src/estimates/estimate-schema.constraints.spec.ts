@@ -13,9 +13,31 @@ import { VehicleSchema } from '../vehicles/schemas/vehicle.schema';
 describe('estimate schema constraints', () => {
   it('enforces uniqueness on key fields', () => {
     expect(UserSchema.path('email').options.unique).toBe(true);
-    expect(VehicleSchema.path('vin').options.unique).toBe(true);
-    expect(VehicleSchema.path('license_plate').options.unique).toBe(true);
     expect(EstimateSchema.path('estimate_number').options.unique).toBe(true);
+  });
+
+  it('uses partial unique indexes for optional vehicle identifiers', () => {
+    const indexEntries = VehicleSchema.indexes();
+    expect(indexEntries).toEqual(
+      expect.arrayContaining([
+        [
+          { vin: 1 },
+          expect.objectContaining({
+            unique: true,
+            partialFilterExpression: { vin: { $type: 'string' } },
+          }),
+        ],
+        [
+          { license_plate: 1 },
+          expect.objectContaining({
+            unique: true,
+            partialFilterExpression: {
+              license_plate: { $type: 'string' },
+            },
+          }),
+        ],
+      ]),
+    );
   });
 
   it('wires estimate relationship refs', () => {

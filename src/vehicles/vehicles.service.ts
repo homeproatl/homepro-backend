@@ -45,18 +45,22 @@ export class VehiclesService {
       );
     }
 
+    const vin = this.normalizeVehicleIdentifier(payload.vin);
+    const licensePlate = this.normalizeVehicleIdentifier(payload.license_plate);
+
     try {
       const vehicle = await this.vehicleModel.create({
         customer_id: customer._id,
         is_archived: false,
+        is_incomplete: this.isVehicleIncomplete(vin, licensePlate),
         color: payload.color ?? null,
         year: payload.year ?? null,
         make: payload.make,
         model: payload.model,
         sub_model: payload.sub_model ?? null,
         mileage: payload.mileage ?? null,
-        vin: payload.vin,
-        license_plate: payload.license_plate,
+        vin,
+        license_plate: licensePlate,
       });
 
       return this.toVehicleContract(vehicle);
@@ -111,10 +115,18 @@ export class VehiclesService {
     if (payload.model !== undefined) vehicle.set('model', payload.model);
     if (payload.sub_model !== undefined) vehicle.sub_model = payload.sub_model;
     if (payload.mileage !== undefined) vehicle.mileage = payload.mileage;
-    if (payload.vin !== undefined) vehicle.vin = payload.vin;
-    if (payload.license_plate !== undefined) {
-      vehicle.license_plate = payload.license_plate;
+    if (payload.vin !== undefined) {
+      vehicle.vin = this.normalizeVehicleIdentifier(payload.vin);
     }
+    if (payload.license_plate !== undefined) {
+      vehicle.license_plate = this.normalizeVehicleIdentifier(
+        payload.license_plate,
+      );
+    }
+    vehicle.is_incomplete = this.isVehicleIncomplete(
+      vehicle.vin,
+      vehicle.license_plate,
+    );
 
     try {
       await vehicle.save();
@@ -242,18 +254,24 @@ export class VehiclesService {
   }
 
   private toVehicleContract(vehicle: VehicleDocument) {
+    const vin = vehicle.vin ?? null;
+    const licensePlate = vehicle.license_plate ?? null;
+
     return {
       id: String(vehicle._id),
       customer_id: String(vehicle.customer_id),
       is_archived: vehicle.is_archived === true,
+      is_incomplete:
+        vehicle.is_incomplete === true ||
+        this.isVehicleIncomplete(vin, licensePlate),
       color: vehicle.color ?? null,
       year: vehicle.year ?? null,
       make: vehicle.make,
       model: vehicle.model,
       sub_model: vehicle.sub_model ?? null,
       mileage: vehicle.mileage ?? null,
-      vin: vehicle.vin,
-      license_plate: vehicle.license_plate,
+      vin,
+      license_plate: licensePlate,
       created_at: this.toIsoString(
         (vehicle as unknown as { created_at?: Date }).created_at,
       ),
@@ -265,5 +283,17 @@ export class VehiclesService {
 
   private toIsoString(value?: Date) {
     return value?.toISOString();
+  }
+
+  private normalizeVehicleIdentifier(value?: string | null) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed.toUpperCase() : null;
+  }
+
+  private isVehicleIncomplete(
+    vin: string | null | undefined,
+    licensePlate: string | null | undefined,
+  ) {
+    return !vin || !licensePlate;
   }
 }

@@ -60,8 +60,8 @@ type InvoiceCustomerSnapshot = {
 type InvoiceVehicleSnapshot = {
   vehicle_id: string;
   label: string;
-  vin: string;
-  license_plate: string;
+  vin: string | null;
+  license_plate: string | null;
 };
 
 type InvoiceLaborSnapshot = {
@@ -561,9 +561,9 @@ export class EstimateInvoiceService implements OnModuleDestroy {
 
     const vehicleSnapshot: InvoiceVehicleSnapshot = {
       vehicle_id: String(vehicle._id),
-      label: `${vehicle.license_plate} · ${vehicle.make} ${vehicle.model}`,
-      vin: vehicle.vin,
-      license_plate: vehicle.license_plate,
+      label: this.toVehicleSnapshotLabel(vehicle),
+      vin: vehicle.vin ?? null,
+      license_plate: vehicle.license_plate ?? null,
     };
 
     const servicesSnapshot: InvoiceServiceSnapshot[] = estimate.services.map(
@@ -1062,8 +1062,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       customerEmail: invoice.customer_snapshot.email,
       customerPhone: invoice.customer_snapshot.phone,
       vehicleLabel: invoice.vehicle_snapshot.label,
-      vehicleVin: invoice.vehicle_snapshot.vin,
-      vehiclePlate: invoice.vehicle_snapshot.license_plate,
+      vehicleVin: invoice.vehicle_snapshot.vin ?? 'Not recorded',
+      vehiclePlate: invoice.vehicle_snapshot.license_plate ?? 'Not recorded',
       dueDate: invoice.due_date_snapshot,
       generatedAt: invoice.generated_at,
       paymentStatus: invoice.payment_status_snapshot,
@@ -1092,6 +1092,10 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       dueDate: input.dueDate,
       timeZone: input.timeZone,
     };
+  }
+
+  private toVehicleSnapshotLabel(vehicle: VehicleDocument) {
+    return `${vehicle.license_plate ?? 'No plate'} · ${vehicle.make} ${vehicle.model}`;
   }
 
   private formatInvoiceDate(value: string | null, timeZone: string) {

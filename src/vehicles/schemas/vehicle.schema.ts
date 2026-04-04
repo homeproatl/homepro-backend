@@ -38,14 +38,39 @@ export class Vehicle {
   @Prop({ type: Number, default: null })
   mileage!: number | null;
 
-  @Prop({ required: true, trim: true, uppercase: true, unique: true })
-  vin!: string;
+  @Prop({ type: String, trim: true, uppercase: true, default: null })
+  vin!: string | null;
 
-  @Prop({ required: true, trim: true, uppercase: true, unique: true })
-  license_plate!: string;
+  @Prop({ type: String, trim: true, uppercase: true, default: null })
+  license_plate!: string | null;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  is_incomplete!: boolean;
 
   @Prop({ type: Boolean, default: false, index: true })
   is_archived!: boolean;
 }
 
 export const VehicleSchema = SchemaFactory.createForClass(Vehicle);
+
+VehicleSchema.index(
+  { vin: 1 },
+  {
+    name: 'vin_1',
+    unique: true,
+    partialFilterExpression: {
+      vin: { $type: 'string' },
+    },
+  },
+);
+
+VehicleSchema.index(
+  { license_plate: 1 },
+  {
+    name: 'license_plate_1',
+    unique: true,
+    partialFilterExpression: {
+      license_plate: { $type: 'string' },
+    },
+  },
+);
