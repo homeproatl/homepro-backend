@@ -74,6 +74,7 @@ type InvoiceLaborSnapshot = {
 
 type InvoicePartSnapshot = {
   name: string;
+  part_number: string | null;
   quantity: number;
   cost: number | null;
   price: number;
@@ -582,6 +583,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         })),
         part_lines: service.part_lines.map((line) => ({
           name: line.name,
+          part_number: line.part_number ?? null,
           quantity: line.quantity,
           cost: line.cost,
           price: line.price,
@@ -1043,6 +1045,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       })),
       partLines: line.part_lines.map((partLine) => ({
         description: partLine.name,
+        partNumber: partLine.part_number,
         quantity: partLine.quantity,
         price: partLine.price,
         subTotal: partLine.subtotal,

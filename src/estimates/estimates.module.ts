@@ -14,6 +14,7 @@ import {
   AppSettings,
   AppSettingsSchema,
 } from '../settings/schemas/app-settings.schema';
+import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Vehicle, VehicleSchema } from '../vehicles/schemas/vehicle.schema';
 import { EstimatesController } from './estimates.controller';
@@ -45,6 +46,7 @@ import {
       { name: AuditLog.name, schema: AuditLogSchema },
       { name: User.name, schema: UserSchema },
       { name: ServiceCatalog.name, schema: ServiceCatalogSchema },
+      { name: Tag.name, schema: TagSchema },
     ]),
   ],
   controllers: [EstimatesController],

@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PaidStatus } from '../common/enums/paid-status.enum';
 import { EstimateStatus } from '../common/enums/estimate-status.enum';
 import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot-status.enum';
@@ -458,5 +462,21 @@ describe('EstimatesService', () => {
         ],
       }),
     );
+  });
+
+  it('fails serialization when stored estimate tag scope does not match the line type', () => {
+    const service = createService();
+
+    expect(() =>
+      (service as never as {
+        serializeEmbeddedTags: (
+          lines: Array<Record<string, unknown>> | undefined,
+          expectedScope: 'LABOR' | 'PART',
+        ) => unknown;
+      }).serializeEmbeddedTags(
+        [{ tag_id: null, scope: 'PART', name: 'Priority', color: 'red' }],
+        'LABOR',
+      ),
+    ).toThrow(InternalServerErrorException);
   });
 });

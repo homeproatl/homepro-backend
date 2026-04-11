@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { Estimate, EstimateSchema } from '../estimates/schemas/estimate.schema';
+import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import {
   ServiceCatalog,
   ServiceCatalogSchema,
@@ -15,6 +16,7 @@ import { ServiceCatalogController } from './service-catalog.controller';
     MongooseModule.forFeature([
       { name: ServiceCatalog.name, schema: ServiceCatalogSchema },
       { name: Estimate.name, schema: EstimateSchema },
+      { name: Tag.name, schema: TagSchema },
     ]),
   ],
   controllers: [ServiceCatalogController],

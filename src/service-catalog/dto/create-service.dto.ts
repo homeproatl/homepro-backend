@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -11,6 +12,27 @@ import {
   Max,
   ValidateNested,
 } from 'class-validator';
+import { TAG_COLOR_VALUES, type TagColor } from '../../tags/tag-colors';
+import { TAG_SCOPE_VALUES, type TagScope } from '../../tags/tag-scopes';
+
+export class LineTagDto {
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  id?: string | null;
+
+  @IsEnum(TAG_SCOPE_VALUES)
+  scope!: TagScope;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  name!: string;
+
+  @IsEnum(TAG_COLOR_VALUES)
+  color!: TagColor;
+}
 
 export class CreateServiceLaborLineDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -31,6 +53,13 @@ export class CreateServiceLaborLineDto {
   @Min(0)
   @Max(100)
   discount_percent = 0;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => LineTagDto)
+  tags?: LineTagDto[];
 }
 
 export class CreateServicePartLineDto {
@@ -39,6 +68,12 @@ export class CreateServicePartLineDto {
   @MinLength(1)
   @MaxLength(160)
   name!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(120)
+  part_number?: string | null;
 
   @IsNumber()
   @Min(1)
@@ -59,6 +94,13 @@ export class CreateServicePartLineDto {
   @Min(0)
   @Max(100)
   discount_percent = 0;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => LineTagDto)
+  tags?: LineTagDto[];
 }
 
 export class CreateServiceDto {

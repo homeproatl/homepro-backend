@@ -22,6 +22,10 @@ import {
   ServiceCatalog,
   ServiceCatalogDocument,
 } from '../service-catalog/schemas/service-catalog.schema';
+import { type TagColor } from '../tags/tag-colors';
+import { type TagScope } from '../tags/tag-scopes';
+import { Tag, TagDocument } from '../tags/schemas/tag.schema';
+import { prepareEmbeddedTags } from '../tags/tag-write';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Vehicle, VehicleDocument } from '../vehicles/schemas/vehicle.schema';
 import { Estimate, EstimateDocument } from './schemas/estimate.schema';
@@ -38,13 +42,26 @@ type EstimateServiceWriteInput = {
     hours: number;
     rate: number;
     discount_percent?: number;
+    tags?: Array<{
+      id?: string | null;
+      scope: TagScope;
+      name: string;
+      color: TagColor;
+    }>;
   }[];
   part_lines: {
     name: string;
+    part_number?: string | null;
     quantity: number;
     cost?: number | null;
     price: number;
     discount_percent?: number;
+    tags?: Array<{
+      id?: string | null;
+      scope: TagScope;
+      name: string;
+      color: TagColor;
+    }>;
   }[];
 };
 
@@ -82,6 +99,8 @@ export class EstimateDataService {
     private readonly serviceModel: Model<ServiceCatalogDocument>,
     @InjectModel(Estimate.name)
     private readonly estimateModel: Model<EstimateDocument>,
+    @InjectModel(Tag.name)
+    private readonly tagModel: Model<TagDocument> = {} as never,
     private readonly estimateDomainService: EstimateDomainService,
   ) {}
 
@@ -311,71 +330,111 @@ export class EstimateDataService {
         .filter((value): value is string => Boolean(value)) ?? [],
     );
 
-    return services.map((service) => {
-      if (service.labor_lines.length === 0 && service.part_lines.length === 0) {
-        throw new BadRequestException(
-          'Each service must include at least one labor or part row.',
+    return Promise.all(
+      services.map(async (service) => {
+        if (service.labor_lines.length === 0 && service.part_lines.length === 0) {
+          throw new BadRequestException(
+            'Each service must include at least one labor or part row.',
+          );
+        }
+
+        const template = service.canned_service_id
+          ? templatesById.get(service.canned_service_id)
+          : null;
+
+        if (service.canned_service_id && !template) {
+          throw new NotFoundException('Service template not found');
+        }
+
+        if (
+          template?.is_active === false &&
+          !currentTemplateIds.has(String(template._id))
+        ) {
+          throw new BadRequestException(
+            'Inactive canned services cannot be attached to estimates.',
+          );
+        }
+
+        const name = service.name.trim() || template?.name?.trim() || '';
+        if (!name) {
+          throw new BadRequestException('Service name is required');
+        }
+
+        const preparedLaborTags = await Promise.all(
+          service.labor_lines.map((line) =>
+            prepareEmbeddedTags(this.tagModel, line.tags, 'LABOR'),
+          ),
         );
-      }
-
-      const template = service.canned_service_id
-        ? templatesById.get(service.canned_service_id)
-        : null;
-
-      if (service.canned_service_id && !template) {
-        throw new NotFoundException('Service template not found');
-      }
-
-      if (
-        template?.is_active === false &&
-        !currentTemplateIds.has(String(template._id))
-      ) {
-        throw new BadRequestException(
-          'Inactive canned services cannot be attached to estimates.',
+        const preparedPartTags = await Promise.all(
+          service.part_lines.map((line) =>
+            prepareEmbeddedTags(this.tagModel, line.tags, 'PART'),
+          ),
         );
-      }
 
-      const name = service.name.trim() || template?.name?.trim() || '';
-      if (!name) {
-        throw new BadRequestException('Service name is required');
-      }
+        const totals = calculateServiceTotals({
+          laborLines: service.labor_lines.map((line, index) => ({
+            assignedUserId: this.resolveLaborTechnicianId({
+              assignedUserId: line.assigned_user_id,
+              techniciansById,
+              currentLaborTechnicianIds,
+            }),
+            description: line.description,
+            hours: line.hours,
+            rate: line.rate,
+            discountPercent: line.discount_percent ?? 0,
+            tags: preparedLaborTags[index].map((tag) => ({
+              id: tag.tag_id ? String(tag.tag_id) : null,
+              scope: tag.scope,
+              name: tag.name,
+              color: tag.color,
+            })),
+          })),
+          partLines: service.part_lines.map((line, index) => ({
+            name: line.name,
+            partNumber: line.part_number ?? null,
+            quantity: line.quantity,
+            cost: line.cost ?? null,
+            price: line.price,
+            discountPercent: line.discount_percent ?? 0,
+            tags: preparedPartTags[index].map((tag) => ({
+              id: tag.tag_id ? String(tag.tag_id) : null,
+              scope: tag.scope,
+              name: tag.name,
+              color: tag.color,
+            })),
+          })),
+        });
 
-      const totals = calculateServiceTotals({
-        laborLines: service.labor_lines.map((line) => ({
-          assignedUserId: this.resolveLaborTechnicianId({
-            assignedUserId: line.assigned_user_id,
-            techniciansById,
-            currentLaborTechnicianIds,
-          }),
-          description: line.description,
-          hours: line.hours,
-          rate: line.rate,
-          discountPercent: line.discount_percent ?? 0,
-        })),
-        partLines: service.part_lines.map((line) => ({
-          name: line.name,
-          quantity: line.quantity,
-          cost: line.cost ?? null,
-          price: line.price,
-          discountPercent: line.discount_percent ?? 0,
-        })),
-      });
-
-      return {
-        canned_service_id: template?._id ?? null,
-        name,
-        labor_lines: totals.labor_lines.map((line) => ({
-          ...line,
-          assigned_user_id: line.assigned_user_id
-            ? new Types.ObjectId(line.assigned_user_id)
-            : null,
-        })),
-        part_lines: totals.part_lines,
-        labor_total: totals.labor_total,
-        parts_total: totals.parts_total,
-        total: totals.total,
-      };
-    });
+        return {
+          canned_service_id: template?._id ?? null,
+          name,
+          labor_lines: totals.labor_lines.map((line) => ({
+            ...line,
+            assigned_user_id: line.assigned_user_id
+              ? new Types.ObjectId(line.assigned_user_id)
+              : null,
+            tags: line.tags.map((tag) => ({
+              tag_id: tag.tag_id ? new Types.ObjectId(tag.tag_id) : null,
+              scope: tag.scope,
+              name: tag.name,
+              color: tag.color,
+            })),
+          })),
+          part_lines: totals.part_lines.map((line) => ({
+            ...line,
+            tags: line.tags.map((tag) => ({
+              tag_id: tag.tag_id ? new Types.ObjectId(tag.tag_id) : null,
+              scope: tag.scope,
+              name: tag.name,
+              color: tag.color,
+            })),
+          })),
+          labor_total: totals.labor_total,
+          parts_total: totals.parts_total,
+          total: totals.total,
+        };
+      }),
+    );
   }
 
   private resolveLaborTechnicianId(input: {

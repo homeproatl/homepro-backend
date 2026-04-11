@@ -12,6 +12,7 @@ export type InvoiceDocumentLaborLineItem = {
 
 export type InvoiceDocumentPartLineItem = {
   description: string;
+  partNumber: string | null;
   quantity: number;
   price: number;
   subTotal: number;
@@ -139,6 +140,7 @@ function renderPartTable(lines: InvoiceDocumentPartLineItem[]) {
       (line) => `
         <tr>
           <td style="padding:10px 12px;border-top:1px solid #e4e4e7;">${escapeHtml(line.description)}</td>
+          <td style="padding:10px 12px;border-top:1px solid #e4e4e7;">${line.partNumber ? escapeHtml(line.partNumber) : '—'}</td>
           <td style="padding:10px 12px;border-top:1px solid #e4e4e7;text-align:right;">${line.quantity}</td>
           <td style="padding:10px 12px;border-top:1px solid #e4e4e7;text-align:right;">${formatCurrency(line.price)}</td>
           <td style="padding:10px 12px;border-top:1px solid #e4e4e7;text-align:right;">${formatCurrency(line.subTotal)}</td>
@@ -151,6 +153,7 @@ function renderPartTable(lines: InvoiceDocumentPartLineItem[]) {
       <thead style="background:#f4f4f5;">
         <tr>
           <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#52525b;">Part</th>
+          <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#52525b;">Part #</th>
           <th style="padding:10px 12px;text-align:right;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#52525b;">Qty</th>
           <th style="padding:10px 12px;text-align:right;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#52525b;">Price</th>
           <th style="padding:10px 12px;text-align:right;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#52525b;">Subtotal</th>
@@ -159,7 +162,7 @@ function renderPartTable(lines: InvoiceDocumentPartLineItem[]) {
       <tbody>
         ${
           rows ||
-          `<tr><td colspan="4" style="padding:14px 12px;border-top:1px solid #e4e4e7;color:#71717a;">No part lines.</td></tr>`
+          `<tr><td colspan="5" style="padding:14px 12px;border-top:1px solid #e4e4e7;color:#71717a;">No part lines.</td></tr>`
         }
       </tbody>
     </table>

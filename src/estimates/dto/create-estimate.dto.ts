@@ -18,6 +18,29 @@ import {
 import { PaidStatus } from '../../common/enums/paid-status.enum';
 import { PaymentType } from '../../common/enums/payment-type.enum';
 import { EstimateStatus } from '../../common/enums/estimate-status.enum';
+import { TAG_COLOR_VALUES, type TagColor } from '../../tags/tag-colors';
+import { TAG_SCOPE_VALUES, type TagScope } from '../../tags/tag-scopes';
+
+export class EstimateLineTagDto {
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  id?: string | null;
+
+  @IsEnum(TAG_SCOPE_VALUES)
+  scope!: TagScope;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  name!: string;
+
+  @IsEnum(TAG_COLOR_VALUES)
+  color!: TagColor;
+}
 
 export class CreateEstimateLaborLineDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -46,6 +69,13 @@ export class CreateEstimateLaborLineDto {
   @Min(0)
   @Max(100)
   discount_percent = 0;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => EstimateLineTagDto)
+  tags?: EstimateLineTagDto[];
 }
 
 export class CreateEstimatePartLineDto {
@@ -54,6 +84,12 @@ export class CreateEstimatePartLineDto {
   @MinLength(1)
   @MaxLength(160)
   name!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(120)
+  part_number?: string | null;
 
   @Type(() => Number)
   @IsNumber()
@@ -76,6 +112,13 @@ export class CreateEstimatePartLineDto {
   @Min(0)
   @Max(100)
   discount_percent = 0;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => EstimateLineTagDto)
+  tags?: EstimateLineTagDto[];
 }
 
 export class CreateEstimateServiceDto {

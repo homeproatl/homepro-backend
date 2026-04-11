@@ -22,6 +22,7 @@ describe('EstimateDataService', () => {
       (overrides?.userModel ?? {}) as never,
       (overrides?.serviceModel ?? {}) as never,
       (overrides?.estimateModel ?? {}) as never,
+      {} as never,
       (overrides?.estimateDomainService ?? {
         vehicleBelongsToCustomer: jest.fn().mockReturnValue(true),
         assertValidScheduleRange: jest.fn(),

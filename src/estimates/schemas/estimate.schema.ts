@@ -6,6 +6,7 @@ import { User } from '../../users/schemas/user.schema';
 import { PaidStatus } from '../../common/enums/paid-status.enum';
 import { PaymentType } from '../../common/enums/payment-type.enum';
 import { EstimateStatus } from '../../common/enums/estimate-status.enum';
+import { EmbeddedTag, EmbeddedTagSchema } from '../../tags/schemas/tag.schema';
 
 export type EstimateDocument = HydratedDocument<Estimate>;
 
@@ -30,6 +31,9 @@ export class EstimateLaborLine {
 
   @Prop({ required: true, min: 0, default: 0 })
   subtotal!: number;
+
+  @Prop({ type: [EmbeddedTagSchema], default: [] })
+  tags!: EmbeddedTag[];
 }
 
 export const EstimateLaborLineSchema = SchemaFactory.createForClass(EstimateLaborLine);
@@ -40,6 +44,9 @@ export class EstimatePartLine {
 
   @Prop({ required: true, trim: true })
   name!: string;
+
+  @Prop({ type: String, trim: true, default: null })
+  part_number!: string | null;
 
   @Prop({ required: true, min: 1 })
   quantity!: number;
@@ -55,6 +62,9 @@ export class EstimatePartLine {
 
   @Prop({ required: true, min: 0, default: 0 })
   subtotal!: number;
+
+  @Prop({ type: [EmbeddedTagSchema], default: [] })
+  tags!: EmbeddedTag[];
 }
 
 export const EstimatePartLineSchema = SchemaFactory.createForClass(EstimatePartLine);

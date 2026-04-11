@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { EmbeddedTag, EmbeddedTagSchema } from '../../tags/schemas/tag.schema';
 
 export type ServiceCatalogDocument = HydratedDocument<ServiceCatalog>;
 
@@ -19,6 +20,9 @@ export class ServiceCatalogLaborLine {
 
   @Prop({ required: true, min: 0, default: 0 })
   subtotal!: number;
+
+  @Prop({ type: [EmbeddedTagSchema], default: [] })
+  tags!: EmbeddedTag[];
 }
 
 export const ServiceCatalogLaborLineSchema = SchemaFactory.createForClass(
@@ -29,6 +33,9 @@ export const ServiceCatalogLaborLineSchema = SchemaFactory.createForClass(
 export class ServiceCatalogPartLine {
   @Prop({ required: true, trim: true })
   name!: string;
+
+  @Prop({ type: String, trim: true, default: null })
+  part_number!: string | null;
 
   @Prop({ required: true, min: 1 })
   quantity!: number;
@@ -44,6 +51,9 @@ export class ServiceCatalogPartLine {
 
   @Prop({ required: true, min: 0, default: 0 })
   subtotal!: number;
+
+  @Prop({ type: [EmbeddedTagSchema], default: [] })
+  tags!: EmbeddedTag[];
 }
 
 export const ServiceCatalogPartLineSchema = SchemaFactory.createForClass(

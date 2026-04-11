@@ -19,6 +19,7 @@ import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot
 import { EstimateDataService } from './estimate-data.service';
 import { EstimateDomainService } from './estimate-domain.service';
 import { EstimateInvoiceService } from './estimate-invoice.service';
+import { serializeEmbeddedTags } from '../tags/tag-serialization';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { ListEstimatesQueryDto } from './dto/list-estimates-query.dto';
 import { UpdateEstimatePaymentStatusDto } from './dto/update-estimate-payment-status.dto';
@@ -295,13 +296,26 @@ export class EstimatesService {
         hours: line.hours,
         rate: line.rate,
         discount_percent: line.discount_percent,
+        tags: (line.tags ?? []).map((tag) => ({
+          id: tag.tag_id ? String(tag.tag_id) : null,
+          scope: 'LABOR' as const,
+          name: tag.name,
+          color: tag.color,
+        })),
       })),
       part_lines: service.part_lines.map((line) => ({
         name: line.name,
+        part_number: line.part_number ?? null,
         quantity: line.quantity,
         cost: line.cost,
         price: line.price,
         discount_percent: line.discount_percent,
+        tags: (line.tags ?? []).map((tag) => ({
+          id: tag.tag_id ? String(tag.tag_id) : null,
+          scope: 'PART' as const,
+          name: tag.name,
+          color: tag.color,
+        })),
       })),
     }));
 
@@ -657,6 +671,10 @@ export class EstimatesService {
       discount_percent:
         typeof line.discount_percent === 'number' ? line.discount_percent : 0,
       subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+      tags: this.serializeEmbeddedTags(
+        line.tags as Array<Record<string, unknown>> | undefined,
+        'LABOR',
+      ),
     }));
   }
 
@@ -664,13 +682,30 @@ export class EstimatesService {
     return (lines ?? []).map((line) => ({
       id: this.serializeId(line._id, 'estimate part line id'),
       name: typeof line.name === 'string' ? line.name : '',
+      part_number:
+        typeof line.part_number === 'string' && line.part_number.trim().length > 0
+          ? line.part_number
+          : null,
       quantity: typeof line.quantity === 'number' ? line.quantity : 0,
       cost: typeof line.cost === 'number' ? line.cost : null,
       price: typeof line.price === 'number' ? line.price : 0,
       discount_percent:
         typeof line.discount_percent === 'number' ? line.discount_percent : 0,
       subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+      tags: this.serializeEmbeddedTags(
+        line.tags as Array<Record<string, unknown>> | undefined,
+        'PART',
+      ),
     }));
+  }
+
+  private serializeEmbeddedTags(
+    lines: Array<Record<string, unknown>> | undefined,
+    expectedScope: 'LABOR' | 'PART',
+  ) {
+    return serializeEmbeddedTags(lines, expectedScope, (value, context) =>
+      this.serializeId(value, context),
+    );
   }
 
   private serializeId(value: unknown, context: string) {

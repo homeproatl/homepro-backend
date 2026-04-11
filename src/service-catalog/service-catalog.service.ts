@@ -11,6 +11,9 @@ import { Model } from 'mongoose';
 import { asObjectId } from '../common/utils/object-id';
 import { calculateServiceTotals } from '../common/calculators/estimate-calculators';
 import { Estimate, EstimateDocument } from '../estimates/schemas/estimate.schema';
+import { Tag, TagDocument } from '../tags/schemas/tag.schema';
+import { serializeEmbeddedTags } from '../tags/tag-serialization';
+import { prepareEmbeddedTags } from '../tags/tag-write';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import {
@@ -86,15 +89,28 @@ type SerializedServiceCatalog = Record<string, unknown> & {
     rate: number;
     discount_percent: number;
     subtotal: number;
+    tags: Array<{
+      id: string | null;
+      scope: string;
+      name: string;
+      color: string;
+    }>;
   }>;
   part_lines: Array<{
     id: string;
     name: string;
+    part_number: string | null;
     quantity: number;
     cost: number | null;
     price: number;
     discount_percent: number;
     subtotal: number;
+    tags: Array<{
+      id: string | null;
+      scope: string;
+      name: string;
+      color: string;
+    }>;
   }>;
   labor_total: number;
   parts_total: number;
@@ -112,6 +128,8 @@ export class ServiceCatalogService implements OnModuleInit {
     private readonly serviceModel: Model<ServiceCatalogDocument>,
     @InjectModel(Estimate.name)
     private readonly estimateModel: Model<EstimateDocument>,
+    @InjectModel(Tag.name)
+    private readonly tagModel: Model<TagDocument> = {} as never,
   ) {}
 
   async onModuleInit() {
@@ -146,6 +164,7 @@ export class ServiceCatalogService implements OnModuleInit {
 
   private toPartLineSignature(line: {
     name: string;
+    part_number?: string | null;
     quantity: number;
     cost?: number | null;
     price: number;
@@ -153,6 +172,9 @@ export class ServiceCatalogService implements OnModuleInit {
   }) {
     return JSON.stringify([
       this.normalizeLineText(line.name),
+      line.part_number
+        ? this.normalizeLineText(line.part_number)
+        : null,
       line.quantity,
       line.cost ?? null,
       line.price,
@@ -170,6 +192,7 @@ export class ServiceCatalogService implements OnModuleInit {
       }>;
       part_lines: Array<{
         name: string;
+        part_number?: string | null;
         quantity: number;
         cost?: number | null;
         price: number;
@@ -276,33 +299,6 @@ export class ServiceCatalogService implements OnModuleInit {
     });
   }
 
-  private toServiceTotals(payload: {
-    labor_lines: CreateServiceDto['labor_lines'];
-    part_lines: CreateServiceDto['part_lines'];
-  }) {
-    if (payload.labor_lines.length === 0 && payload.part_lines.length === 0) {
-      throw new BadRequestException(
-        'Each canned service must include at least one labor or part row.',
-      );
-    }
-
-    return calculateServiceTotals({
-      laborLines: payload.labor_lines.map((line) => ({
-        description: line.description,
-        hours: line.hours,
-        rate: line.rate,
-        discountPercent: line.discount_percent,
-      })),
-      partLines: payload.part_lines.map((line) => ({
-        name: line.name,
-        quantity: line.quantity,
-        cost: line.cost,
-        price: line.price,
-        discountPercent: line.discount_percent,
-      })),
-    });
-  }
-
   private async getUsageCount(serviceId: ServiceCatalogDocument['_id']) {
     return this.estimateModel
       .countDocuments({ 'services.canned_service_id': serviceId })
@@ -401,6 +397,10 @@ export class ServiceCatalogService implements OnModuleInit {
       discount_percent:
         typeof line.discount_percent === 'number' ? line.discount_percent : 0,
       subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+      tags: this.serializeEmbeddedTags(
+        line.tags as Array<Record<string, unknown>> | undefined,
+        'LABOR',
+      ),
     }));
   }
 
@@ -408,13 +408,30 @@ export class ServiceCatalogService implements OnModuleInit {
     return (lines ?? []).map((line) => ({
       id: this.serializeId(line._id, 'canned service part line id'),
       name: typeof line.name === 'string' ? line.name : '',
+      part_number:
+        typeof line.part_number === 'string' && line.part_number.trim().length > 0
+          ? line.part_number
+          : null,
       quantity: typeof line.quantity === 'number' ? line.quantity : 0,
       cost: typeof line.cost === 'number' ? line.cost : null,
       price: typeof line.price === 'number' ? line.price : 0,
       discount_percent:
         typeof line.discount_percent === 'number' ? line.discount_percent : 0,
       subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
+      tags: this.serializeEmbeddedTags(
+        line.tags as Array<Record<string, unknown>> | undefined,
+        'PART',
+      ),
     }));
+  }
+
+  private serializeEmbeddedTags(
+    lines: Array<Record<string, unknown>> | undefined,
+    expectedScope: 'LABOR' | 'PART',
+  ) {
+    return serializeEmbeddedTags(lines, expectedScope, (value, context) =>
+      this.serializeId(value, context),
+    );
   }
 
   private serializeId(value: unknown, context: string) {
@@ -442,7 +459,7 @@ export class ServiceCatalogService implements OnModuleInit {
 
   async ensureMinimalCatalog(): Promise<void> {
     for (const item of MINIMAL_SERVICES) {
-      const totals = this.toServiceTotals(item);
+      const totals = await this.toServiceTotals(item);
       const normalizedName = this.normalizeServiceName(item.name);
       await this.serviceModel
         .updateOne(
@@ -463,7 +480,7 @@ export class ServiceCatalogService implements OnModuleInit {
 
   async create(payload: CreateServiceDto) {
     const name = payload.name.trim();
-    const totals = this.toServiceTotals(payload);
+    const totals = await this.toServiceTotals(payload);
     const duplicate = await this.findDuplicateByNameAndLines(name, totals);
     if (duplicate) {
       throw this.buildDuplicateConflict(duplicate);
@@ -518,7 +535,7 @@ export class ServiceCatalogService implements OnModuleInit {
       service.normalized_name = this.normalizeServiceName(nextName);
     }
 
-    const totals = this.toServiceTotals({
+    const totals = await this.toServiceTotals({
       labor_lines: payload.labor_lines ?? service.labor_lines,
       part_lines: payload.part_lines ?? service.part_lines,
     });
@@ -596,5 +613,80 @@ export class ServiceCatalogService implements OnModuleInit {
     }
 
     return { deleted: true };
+  }
+
+  private async toServiceTotals(payload: {
+    labor_lines: CreateServiceDto['labor_lines'];
+    part_lines: CreateServiceDto['part_lines'];
+  }) {
+    if (payload.labor_lines.length === 0 && payload.part_lines.length === 0) {
+      throw new BadRequestException(
+        'Each canned service must include at least one labor or part row.',
+      );
+    }
+
+    const preparedLaborTags = await Promise.all(
+      payload.labor_lines.map((line) =>
+        prepareEmbeddedTags(this.tagModel, line.tags, 'LABOR'),
+      ),
+    );
+    const preparedPartTags = await Promise.all(
+      payload.part_lines.map((line) =>
+        prepareEmbeddedTags(this.tagModel, line.tags, 'PART'),
+      ),
+    );
+
+    const totals = calculateServiceTotals({
+      laborLines: payload.labor_lines.map((line, index) => ({
+        description: line.description,
+        hours: line.hours,
+        rate: line.rate,
+        discountPercent: line.discount_percent,
+        tags: preparedLaborTags[index].map((tag) => ({
+          id: tag.tag_id ? String(tag.tag_id) : null,
+          scope: tag.scope,
+          name: tag.name,
+          color: tag.color,
+        })),
+      })),
+      partLines: payload.part_lines.map((line, index) => ({
+        name: line.name,
+        partNumber: line.part_number ?? null,
+        quantity: line.quantity,
+        cost: line.cost,
+        price: line.price,
+        discountPercent: line.discount_percent,
+        tags: preparedPartTags[index].map((tag) => ({
+          id: tag.tag_id ? String(tag.tag_id) : null,
+          scope: tag.scope,
+          name: tag.name,
+          color: tag.color,
+        })),
+      })),
+    });
+
+    return {
+      labor_lines: totals.labor_lines.map((line) => ({
+        ...line,
+        tags: line.tags.map((tag) => ({
+          tag_id: tag.tag_id ? asObjectId(tag.tag_id, 'tag id') : null,
+          scope: tag.scope,
+          name: tag.name,
+          color: tag.color,
+        })),
+      })),
+      part_lines: totals.part_lines.map((line) => ({
+        ...line,
+        tags: line.tags.map((tag) => ({
+          tag_id: tag.tag_id ? asObjectId(tag.tag_id, 'tag id') : null,
+          scope: tag.scope,
+          name: tag.name,
+          color: tag.color,
+        })),
+      })),
+      labor_total: totals.labor_total,
+      parts_total: totals.parts_total,
+      total: totals.total,
+    };
   }
 }

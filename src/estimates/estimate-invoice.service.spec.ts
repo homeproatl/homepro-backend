@@ -266,6 +266,88 @@ describe('EstimateInvoiceService', () => {
     expect(result).not.toHaveProperty('__v');
   });
 
+  it('serializes invoice snapshot part numbers', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        serializeSnapshot: (snapshot: {
+          toObject: () => Record<string, unknown>;
+        }) => Record<string, unknown>;
+      }
+    ).serializeSnapshot({
+      toObject: () => ({
+        _id: 'snapshot-1',
+        estimate_id: 'estimate-1',
+        invoice_number: 'INV-100',
+        revision_number: 2,
+        status: 'ISSUED',
+        customer_snapshot: {
+          customer_id: 'customer-1',
+          name: 'Rico Customer',
+          email: 'customer@example.com',
+          phone: '123',
+        },
+        vehicle_snapshot: {
+          vehicle_id: 'vehicle-1',
+          label: '2020 Honda Accord',
+          vin: 'VIN123',
+          license_plate: 'ABC123',
+        },
+        services_snapshot: [
+          {
+            estimate_service_id: 'service-1',
+            canned_service_id: null,
+            name: 'Brake Service',
+            labor_lines: [],
+            part_lines: [
+              {
+                name: 'Brake pads',
+                part_number: 'BP-100',
+                quantity: 1,
+                cost: 50,
+                price: 80,
+                discount_percent: 0,
+                subtotal: 80,
+              },
+            ],
+            labor_total: 0,
+            parts_total: 80,
+            total: 80,
+          },
+        ],
+        estimate_number_snapshot: 'EST-100',
+        title_snapshot: 'Brake Estimate',
+        time_zone_snapshot: 'America/New_York',
+        total: 80,
+        payment_status_snapshot: 'UNPAID',
+        payment_type_snapshot: 'POS_CARD',
+        due_date_snapshot: null,
+        scheduled_start_snapshot: null,
+        scheduled_end_snapshot: null,
+        billable_hash: 'hash-1',
+        issued_at: '2026-04-03T08:00:00.000Z',
+        sent_at: null,
+        stale_at: null,
+        superseded_by_snapshot_id: null,
+        created_at: '2026-04-03T08:00:00.000Z',
+        updated_at: '2026-04-03T08:05:00.000Z',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      services_snapshot: [
+        expect.objectContaining({
+          part_lines: [
+            expect.objectContaining({
+              part_number: 'BP-100',
+            }),
+          ],
+        }),
+      ],
+    });
+  });
+
   it('serializes invoice dispatches without leaking internal request fields', () => {
     const service = createService();
 

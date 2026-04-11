@@ -1,50 +1,55 @@
 import { validateEnv } from './env.validation';
 
+function createEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: 'development',
+    APP_PORT: '4000',
+    MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
+    JWT_ACCESS_SECRET: 'access-secret',
+    JWT_REFRESH_SECRET: 'refresh-secret',
+    JWT_ACCESS_TTL: '15m',
+    JWT_REFRESH_TTL: '7d',
+    ...overrides,
+  };
+}
+
 describe('validateEnv', () => {
   it('validates APP_PORT as integer range', () => {
-    const env = validateEnv({
-      NODE_ENV: 'development',
-      OWNER_ADMIN_PASSWORD: 'secret',
-      APP_PORT: '4000',
-    });
+    const env = validateEnv(createEnv({ OWNER_ADMIN_PASSWORD: 'secret' }));
 
     expect(env.APP_PORT).toBe(4000);
   });
 
   it('rejects invalid APP_PORT values', () => {
     expect(() =>
-      validateEnv({
-        NODE_ENV: 'development',
-        OWNER_ADMIN_PASSWORD: 'secret',
+      validateEnv(createEnv({
         APP_PORT: 'abc',
-      }),
+        OWNER_ADMIN_PASSWORD: 'secret',
+      })),
     ).toThrow('APP_PORT must be an integer between 1 and 65535');
 
     expect(() =>
-      validateEnv({
-        NODE_ENV: 'development',
-        OWNER_ADMIN_PASSWORD: 'secret',
+      validateEnv(createEnv({
         APP_PORT: '70000',
-      }),
+        OWNER_ADMIN_PASSWORD: 'secret',
+      })),
     ).toThrow('APP_PORT must be an integer between 1 and 65535');
   });
 
   it('supports MONGO_URI with mongodb protocol', () => {
-    const env = validateEnv({
-      NODE_ENV: 'development',
-      OWNER_ADMIN_PASSWORD: 'secret',
+    const env = validateEnv(createEnv({
       MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
-    });
+      OWNER_ADMIN_PASSWORD: 'secret',
+    }));
 
     expect(env.MONGO_URI).toBe('mongodb://127.0.0.1:27017/rico?replicaSet=rs0');
   });
 
   it('supports mongodb+srv protocol', () => {
-    const env = validateEnv({
-      NODE_ENV: 'development',
-      OWNER_ADMIN_PASSWORD: 'secret',
+    const env = validateEnv(createEnv({
       MONGO_URI: 'mongodb+srv://user:pass@cluster0.mongodb.net/rico',
-    });
+      OWNER_ADMIN_PASSWORD: 'secret',
+    }));
 
     expect(env.MONGO_URI).toBe(
       'mongodb+srv://user:pass@cluster0.mongodb.net/rico',
@@ -52,12 +57,11 @@ describe('validateEnv', () => {
   });
 
   it('supports Atlas-style multi-host mongodb URIs', () => {
-    const env = validateEnv({
-      NODE_ENV: 'development',
-      OWNER_ADMIN_PASSWORD: 'secret',
+    const env = validateEnv(createEnv({
       MONGO_URI:
         'mongodb://tired:tired@ac-gc3q509-shard-00-00.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-01.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-02.jhsrzzq.mongodb.net:27017/rico?ssl=true&replicaSet=atlas-8hz1ij-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0',
-    });
+      OWNER_ADMIN_PASSWORD: 'secret',
+    }));
 
     expect(env.MONGO_URI).toBe(
       'mongodb://tired:tired@ac-gc3q509-shard-00-00.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-01.jhsrzzq.mongodb.net:27017,ac-gc3q509-shard-00-02.jhsrzzq.mongodb.net:27017/rico?ssl=true&replicaSet=atlas-8hz1ij-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0',
@@ -66,11 +70,10 @@ describe('validateEnv', () => {
 
   it('rejects invalid BUSINESS_TIMEZONE values', () => {
     expect(() =>
-      validateEnv({
-        NODE_ENV: 'development',
-        OWNER_ADMIN_PASSWORD: 'secret',
+      validateEnv(createEnv({
         BUSINESS_TIMEZONE: 'Broken/Timezone',
-      }),
+        OWNER_ADMIN_PASSWORD: 'secret',
+      })),
     ).toThrow('BUSINESS_TIMEZONE must be a valid IANA timezone');
   });
 
@@ -89,33 +92,38 @@ describe('validateEnv', () => {
   });
 
   it('validates FRONTEND_ORIGIN when provided', () => {
-    const env = validateEnv({
-      NODE_ENV: 'development',
-      OWNER_ADMIN_PASSWORD: 'secret',
+    const env = validateEnv(createEnv({
       FRONTEND_ORIGIN: 'https://rico.example.com',
-    });
+      OWNER_ADMIN_PASSWORD: 'secret',
+    }));
 
     expect(env.FRONTEND_ORIGIN).toBe('https://rico.example.com');
   });
 
   it('rejects invalid FRONTEND_ORIGIN values', () => {
     expect(() =>
-      validateEnv({
-        NODE_ENV: 'development',
-        OWNER_ADMIN_PASSWORD: 'secret',
+      validateEnv(createEnv({
         FRONTEND_ORIGIN: 'ftp://rico.example.com',
-      }),
+        OWNER_ADMIN_PASSWORD: 'secret',
+      })),
     ).toThrow('FRONTEND_ORIGIN must be a valid http(s) origin');
   });
 
   it('rejects non-mongo protocols', () => {
     expect(() =>
+      validateEnv(createEnv({
+        MONGO_URI: 'https://example.com/not-mongo',
+        OWNER_ADMIN_PASSWORD: 'secret',
+      })),
+    ).toThrow('MONGO_URI must use mongodb:// or mongodb+srv:// protocol');
+  });
+
+  it('requires explicit development env values without fallback defaults', () => {
+    expect(() =>
       validateEnv({
         NODE_ENV: 'development',
-        OWNER_ADMIN_PASSWORD: 'secret',
-        MONGO_URI: 'https://example.com/not-mongo',
       }),
-    ).toThrow('MONGO_URI must use mongodb:// or mongodb+srv:// protocol');
+    ).toThrow('Missing required environment variable: APP_PORT');
   });
 
   it('allows owner admin envs to be omitted during normal API boot', () => {

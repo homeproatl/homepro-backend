@@ -11,6 +11,7 @@ import { CustomersModule } from './customers/customers.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { EstimatesModule } from './estimates/estimates.module';
 import { SettingsModule } from './settings/settings.module';
+import { TagsModule } from './tags/tags.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { SettingsModule } from './settings/settings.module';
     VehiclesModule,
     EstimatesModule,
     SettingsModule,
+    TagsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -37,6 +37,7 @@ describe('estimate write DTOs', () => {
             part_lines: [
               {
                 name: 'Brake pad set',
+                part_number: '  BP-100  ',
                 quantity: 1,
                 price: 80,
                 cost: 50,
@@ -58,6 +59,7 @@ describe('estimate write DTOs', () => {
     expect(transformed.services[0].labor_lines[0].assigned_user_id).toBe(
       '507f1f77bcf86cd799439014',
     );
+    expect(transformed.services[0].part_lines[0].part_number).toBe('BP-100');
   });
 
   it('rejects malformed ids for create and update payloads', async () => {

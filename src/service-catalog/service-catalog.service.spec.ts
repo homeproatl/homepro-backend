@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ServiceCatalogService } from './service-catalog.service';
 
 function createSessionMock() {
@@ -138,6 +142,22 @@ describe('ServiceCatalogService', () => {
       }),
     ]);
     expect(result[0]).not.toHaveProperty('normalized_name');
+  });
+
+  it('fails serialization when stored canned-service tag scope does not match the line type', () => {
+    const service = new ServiceCatalogService({} as never, {} as never);
+
+    expect(() =>
+      (service as never as {
+        serializeEmbeddedTags: (
+          lines: Array<Record<string, unknown>> | undefined,
+          expectedScope: 'LABOR' | 'PART',
+        ) => unknown;
+      }).serializeEmbeddedTags(
+        [{ tag_id: null, scope: 'PART', name: 'Priority', color: 'red' }],
+        'LABOR',
+      ),
+    ).toThrow(InternalServerErrorException);
   });
 
   it('blocks service deletion when estimate lines already reference the service', async () => {
@@ -387,6 +407,104 @@ describe('ServiceCatalogService', () => {
         normalized_name: 'oil change',
       }),
     );
+  });
+
+  it('allows the same canned service name when only the part number differs', async () => {
+    const create = jest.fn().mockResolvedValue({
+      _id: 'service-2',
+      name: 'Brake Service',
+      normalized_name: 'brake service',
+      is_active: true,
+      labor_lines: [],
+      part_lines: [
+        {
+          _id: 'part-2',
+          name: 'Brake pad set',
+          part_number: 'BP-200',
+          quantity: 1,
+          cost: 50,
+          price: 80,
+          discount_percent: 0,
+        },
+      ],
+      labor_total: 0,
+      parts_total: 80,
+      total: 80,
+      toObject: () => ({
+        _id: 'service-2',
+        name: 'Brake Service',
+        normalized_name: 'brake service',
+        is_active: true,
+        labor_lines: [],
+        part_lines: [
+          {
+            _id: 'part-2',
+            name: 'Brake pad set',
+            part_number: 'BP-200',
+            quantity: 1,
+            cost: 50,
+            price: 80,
+            discount_percent: 0,
+          },
+        ],
+        labor_total: 0,
+        parts_total: 80,
+        total: 80,
+      }),
+    });
+
+    const service = new ServiceCatalogService(
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              {
+                _id: 'service-1',
+                name: 'Brake Service',
+                is_active: true,
+                labor_lines: [],
+                part_lines: [
+                  {
+                    name: 'Brake pad set',
+                    part_number: 'BP-100',
+                    quantity: 1,
+                    cost: 50,
+                    price: 80,
+                    discount_percent: 0,
+                  },
+                ],
+              },
+            ]),
+          }),
+        }),
+        create,
+      } as never,
+      {
+        countDocuments: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(0),
+        }),
+      } as never,
+    );
+
+    await expect(
+      service.create({
+        name: 'Brake Service',
+        labor_lines: [],
+        part_lines: [
+          {
+            name: 'Brake pad set',
+            part_number: 'BP-200',
+            quantity: 1,
+            cost: 50,
+            price: 80,
+            discount_percent: 0,
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      id: 'service-2',
+      name: 'Brake Service',
+    });
   });
 
   it('treats labor line order as identical when comparing duplicates', async () => {

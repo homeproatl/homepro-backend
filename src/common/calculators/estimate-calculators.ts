@@ -1,17 +1,37 @@
+import { type TagColor } from '../../tags/tag-colors';
+import { type TagScope } from '../../tags/tag-scopes';
+
+export type LineTagInput = {
+  id?: string | null;
+  scope: TagScope;
+  name: string;
+  color: TagColor;
+};
+
+export type CalculatedLineTag = {
+  tag_id: string | null;
+  scope: TagScope;
+  name: string;
+  color: TagColor;
+};
+
 export type LaborLineInput = {
   description: string;
   assignedUserId?: string | null;
   hours: number;
   rate: number;
   discountPercent?: number;
+  tags?: Array<LineTagInput | CalculatedLineTag>;
 };
 
 export type PartLineInput = {
   name: string;
+  partNumber?: string | null;
   quantity: number;
   cost?: number | null;
   price: number;
   discountPercent?: number;
+  tags?: Array<LineTagInput | CalculatedLineTag>;
 };
 
 export type CalculatedLaborLine = {
@@ -21,15 +41,18 @@ export type CalculatedLaborLine = {
   rate: number;
   discount_percent: number;
   subtotal: number;
+  tags: CalculatedLineTag[];
 };
 
 export type CalculatedPartLine = {
   name: string;
+  part_number: string | null;
   quantity: number;
   cost: number | null;
   price: number;
   discount_percent: number;
   subtotal: number;
+  tags: CalculatedLineTag[];
 };
 
 export type CalculatedServiceTotals = {
@@ -72,6 +95,14 @@ function validateDiscountPercent(discountPercent: number) {
   }
 }
 
+function resolveCalculatedTagId(tag: LineTagInput | CalculatedLineTag) {
+  if ('tag_id' in tag) {
+    return tag.tag_id;
+  }
+
+  return tag.id ?? null;
+}
+
 export function calculateLaborSubtotal(
   hours: number,
   rate: number,
@@ -109,6 +140,12 @@ export function calculateServiceTotals(input: {
       rate: line.rate,
       discount_percent: discountPercent,
       subtotal: calculateLaborSubtotal(line.hours, line.rate, discountPercent),
+      tags: (line.tags ?? []).map((tag) => ({
+        tag_id: resolveCalculatedTagId(tag),
+        scope: tag.scope,
+        name: tag.name.trim(),
+        color: tag.color,
+      })),
     };
   });
 
@@ -123,6 +160,10 @@ export function calculateServiceTotals(input: {
 
     return {
       name: line.name.trim(),
+      part_number:
+        typeof line.partNumber === 'string' && line.partNumber.trim().length > 0
+          ? line.partNumber.trim()
+          : null,
       quantity: line.quantity,
       cost: normalizedCost,
       price: line.price,
@@ -132,6 +173,12 @@ export function calculateServiceTotals(input: {
         line.price,
         discountPercent,
       ),
+      tags: (line.tags ?? []).map((tag) => ({
+        tag_id: resolveCalculatedTagId(tag),
+        scope: tag.scope,
+        name: tag.name.trim(),
+        color: tag.color,
+      })),
     };
   });
 

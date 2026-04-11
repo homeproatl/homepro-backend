@@ -18,9 +18,8 @@ type AppEnv = {
 function requiredValue(
   key: keyof AppEnv,
   env: NodeJS.ProcessEnv,
-  fallback?: string,
 ): string {
-  const value = env[key] ?? fallback;
+  const value = env[key];
 
   if (!value) {
     throw new Error(`Missing required environment variable: ${key}`);
@@ -29,8 +28,8 @@ function requiredValue(
   return value;
 }
 
-function requiredMongoUri(env: NodeJS.ProcessEnv, fallback?: string): string {
-  const value = env.MONGO_URI ?? fallback;
+function requiredMongoUri(env: NodeJS.ProcessEnv): string {
+  const value = env.MONGO_URI;
 
   if (!value) {
     throw new Error('Missing required environment variable: MONGO_URI');
@@ -55,8 +54,8 @@ function requiredMongoUri(env: NodeJS.ProcessEnv, fallback?: string): string {
   return normalized;
 }
 
-function requiredPort(env: NodeJS.ProcessEnv, fallback?: string): number {
-  const value = requiredValue('APP_PORT', env, fallback);
+function requiredPort(env: NodeJS.ProcessEnv): number {
+  const value = requiredValue('APP_PORT', env);
   const port = Number.parseInt(value, 10);
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -68,9 +67,8 @@ function requiredPort(env: NodeJS.ProcessEnv, fallback?: string): number {
 
 function optionalTimeZone(
   env: NodeJS.ProcessEnv,
-  fallback?: string,
 ): string | undefined {
-  const value = env.BUSINESS_TIMEZONE ?? fallback;
+  const value = env.BUSINESS_TIMEZONE;
 
   if (!value) {
     return undefined;
@@ -87,9 +85,8 @@ function optionalTimeZone(
 
 function optionalOrigin(
   env: NodeJS.ProcessEnv,
-  fallback?: string,
 ): string | undefined {
-  const value = env.FRONTEND_ORIGIN ?? fallback;
+  const value = env.FRONTEND_ORIGIN;
 
   if (!value) {
     return undefined;
@@ -108,9 +105,8 @@ function optionalOrigin(
 
 function optionalInvoiceTransport(
   env: NodeJS.ProcessEnv,
-  fallback?: string,
 ): string | undefined {
-  const value = env.INVOICE_EMAIL_TRANSPORT ?? fallback;
+  const value = env.INVOICE_EMAIL_TRANSPORT;
 
   if (!value) {
     return undefined;
@@ -131,9 +127,8 @@ function optionalInvoiceTransport(
 function optionalEmailAddress(
   env: NodeJS.ProcessEnv,
   key: keyof Pick<AppEnv, 'INVOICE_EMAIL_FROM'>,
-  fallback?: string,
 ) {
-  const value = env[key] ?? fallback;
+  const value = env[key];
   if (!value) {
     return undefined;
   }
@@ -170,39 +165,14 @@ function optionalEnvValue(
     AppEnv,
     'OWNER_ADMIN_NAME' | 'OWNER_ADMIN_EMAIL' | 'OWNER_ADMIN_PASSWORD'
   >,
-  fallback?: string,
 ) {
-  const value = env[key] ?? fallback;
+  const value = env[key];
   return value || undefined;
 }
 
 export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
-  const isProd = env.NODE_ENV === 'production';
-
-  const defaults: Partial<Record<keyof AppEnv, string>> = isProd
-    ? {}
-    : {
-        APP_PORT: '4000',
-        MONGO_URI: 'mongodb://127.0.0.1:27017/rico?replicaSet=rs0',
-        BUSINESS_TIMEZONE: 'America/New_York',
-        FRONTEND_ORIGIN: 'http://127.0.0.1:3000',
-        INVOICE_EMAIL_TRANSPORT: 'DISABLED',
-        INVOICE_EMAIL_FROM: 'billing@rico.local',
-        JWT_ACCESS_SECRET: 'dev-access-secret',
-        JWT_REFRESH_SECRET: 'dev-refresh-secret',
-        JWT_ACCESS_TTL: '15m',
-        JWT_REFRESH_TTL: '7d',
-      };
-
-  const invoiceTransport = optionalInvoiceTransport(
-    env,
-    defaults.INVOICE_EMAIL_TRANSPORT,
-  );
-  const invoiceEmailFrom = optionalEmailAddress(
-    env,
-    'INVOICE_EMAIL_FROM',
-    defaults.INVOICE_EMAIL_FROM,
-  );
+  const invoiceTransport = optionalInvoiceTransport(env);
+  const invoiceEmailFrom = optionalEmailAddress(env, 'INVOICE_EMAIL_FROM');
   const resendApiKey = optionalResendApiKey(env);
 
   if (invoiceTransport === 'RESEND') {
@@ -220,47 +190,19 @@ export function validateEnv(env: NodeJS.ProcessEnv): AppEnv {
   }
 
   return {
-    APP_PORT: requiredPort(env, defaults.APP_PORT),
-    MONGO_URI: requiredMongoUri(env, defaults.MONGO_URI),
-    BUSINESS_TIMEZONE: optionalTimeZone(env, defaults.BUSINESS_TIMEZONE),
-    FRONTEND_ORIGIN: optionalOrigin(env, defaults.FRONTEND_ORIGIN),
+    APP_PORT: requiredPort(env),
+    MONGO_URI: requiredMongoUri(env),
+    BUSINESS_TIMEZONE: optionalTimeZone(env),
+    FRONTEND_ORIGIN: optionalOrigin(env),
     INVOICE_EMAIL_TRANSPORT: invoiceTransport,
     INVOICE_EMAIL_FROM: invoiceEmailFrom,
     INVOICE_EMAIL_RESEND_API_KEY: resendApiKey,
-    JWT_ACCESS_SECRET: requiredValue(
-      'JWT_ACCESS_SECRET',
-      env,
-      defaults.JWT_ACCESS_SECRET,
-    ),
-    JWT_REFRESH_SECRET: requiredValue(
-      'JWT_REFRESH_SECRET',
-      env,
-      defaults.JWT_REFRESH_SECRET,
-    ),
-    JWT_ACCESS_TTL: requiredValue(
-      'JWT_ACCESS_TTL',
-      env,
-      defaults.JWT_ACCESS_TTL,
-    ),
-    JWT_REFRESH_TTL: requiredValue(
-      'JWT_REFRESH_TTL',
-      env,
-      defaults.JWT_REFRESH_TTL,
-    ),
-    OWNER_ADMIN_NAME: optionalEnvValue(
-      env,
-      'OWNER_ADMIN_NAME',
-      defaults.OWNER_ADMIN_NAME,
-    ),
-    OWNER_ADMIN_EMAIL: optionalEnvValue(
-      env,
-      'OWNER_ADMIN_EMAIL',
-      defaults.OWNER_ADMIN_EMAIL,
-    ),
-    OWNER_ADMIN_PASSWORD: optionalEnvValue(
-      env,
-      'OWNER_ADMIN_PASSWORD',
-      defaults.OWNER_ADMIN_PASSWORD,
-    ),
+    JWT_ACCESS_SECRET: requiredValue('JWT_ACCESS_SECRET', env),
+    JWT_REFRESH_SECRET: requiredValue('JWT_REFRESH_SECRET', env),
+    JWT_ACCESS_TTL: requiredValue('JWT_ACCESS_TTL', env),
+    JWT_REFRESH_TTL: requiredValue('JWT_REFRESH_TTL', env),
+    OWNER_ADMIN_NAME: optionalEnvValue(env, 'OWNER_ADMIN_NAME'),
+    OWNER_ADMIN_EMAIL: optionalEnvValue(env, 'OWNER_ADMIN_EMAIL'),
+    OWNER_ADMIN_PASSWORD: optionalEnvValue(env, 'OWNER_ADMIN_PASSWORD'),
   };
 }

@@ -40,6 +40,7 @@ describe('service write DTOs', () => {
     expect(transformed.name).toBe('Oil Change');
     expect(transformed.labor_lines[0].description).toBe('Oil labor');
     expect(transformed.part_lines[0].name).toBe('Engine oil');
+    expect(transformed.part_lines[0].part_number).toBeUndefined();
     await expect(
       pipe.transform(
         {
@@ -57,6 +58,16 @@ describe('service write DTOs', () => {
   it('accepts grouped labor and part updates', async () => {
     const transformed = (await pipe.transform(
       {
+        part_lines: [
+          {
+            name: '  Brake pad set  ',
+            part_number: '  BP-42  ',
+            quantity: 1,
+            cost: 50,
+            price: 80,
+            discount_percent: 0,
+          },
+        ],
         labor_lines: [
           {
             description: 'Brake labor',
@@ -73,6 +84,8 @@ describe('service write DTOs', () => {
     )) as UpdateServiceDto;
 
     expect(transformed.labor_lines?.[0].hours).toBe(2);
+    expect(transformed.part_lines?.[0].name).toBe('Brake pad set');
+    expect(transformed.part_lines?.[0].part_number).toBe('BP-42');
   });
 
   it('rejects blank grouped line labels', async () => {
