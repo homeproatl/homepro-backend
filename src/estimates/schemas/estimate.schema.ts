@@ -39,7 +39,8 @@ export class EstimateLaborLine {
   tags!: EmbeddedTag[];
 }
 
-export const EstimateLaborLineSchema = SchemaFactory.createForClass(EstimateLaborLine);
+export const EstimateLaborLineSchema =
+  SchemaFactory.createForClass(EstimateLaborLine);
 
 @Schema({ _id: true, id: false })
 export class EstimatePartLine {
@@ -70,7 +71,8 @@ export class EstimatePartLine {
   tags!: EmbeddedTag[];
 }
 
-export const EstimatePartLineSchema = SchemaFactory.createForClass(EstimatePartLine);
+export const EstimatePartLineSchema =
+  SchemaFactory.createForClass(EstimatePartLine);
 
 @Schema({ _id: true, id: false })
 export class EstimateServiceEntry {
@@ -109,6 +111,49 @@ export class EstimateServiceEntry {
 
 export const EstimateServiceEntrySchema =
   SchemaFactory.createForClass(EstimateServiceEntry);
+
+@Schema({ _id: false, id: false })
+export class EstimateSourceMetadata {
+  @Prop({ required: true, trim: true, default: 'shopmonkey' })
+  source_system!: string;
+
+  @Prop({ type: String, trim: true, default: null })
+  document_kind!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  external_order_id!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  external_reference_number!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  external_invoice_number!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  order_path!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  shop_timezone!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  source_state_label!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  invoice_status!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  appointment_status!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  created_at_shop_time!: string | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  invoiced_at_shop_time!: string | null;
+}
+
+export const EstimateSourceMetadataSchema = SchemaFactory.createForClass(
+  EstimateSourceMetadata,
+);
 
 @Schema({
   collection: 'estimates',
@@ -190,6 +235,9 @@ export class Estimate {
   })
   services!: EstimateServiceEntry[];
 
+  @Prop({ type: EstimateSourceMetadataSchema, default: null })
+  source_metadata!: EstimateSourceMetadata | null;
+
   @Prop({ type: Number, required: true, default: 0, min: 0 })
   labor_total!: number;
 
@@ -202,5 +250,11 @@ export class Estimate {
 
 export const EstimateSchema = SchemaFactory.createForClass(Estimate);
 
-EstimateSchema.index({ assigned_user_id: 1, scheduled_start: 1, scheduled_end: 1 });
+EstimateSchema.index({
+  assigned_user_id: 1,
+  scheduled_start: 1,
+  scheduled_end: 1,
+});
 EstimateSchema.index({ created_at: -1 });
+EstimateSchema.index({ 'source_metadata.external_order_id': 1 });
+EstimateSchema.index({ 'source_metadata.external_invoice_number': 1 });

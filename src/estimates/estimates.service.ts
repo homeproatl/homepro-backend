@@ -95,6 +95,7 @@ export class EstimatesService {
       payment_status: payload.payment_status,
       payment_type: payload.payment_type,
       due_date: payload.due_date ? new Date(payload.due_date) : null,
+      source_metadata: payload.source_metadata ?? null,
       services: payload.services,
     });
 
@@ -125,7 +126,8 @@ export class EstimatesService {
       .find(query)
       .sort({ created_at: -1 })
       .exec();
-    const estimatesWithBillingSummaries = await this.withBillingSummaries(estimates);
+    const estimatesWithBillingSummaries =
+      await this.withBillingSummaries(estimates);
 
     return estimatesWithBillingSummaries.filter((estimate) => {
       if (
@@ -142,7 +144,10 @@ export class EstimatesService {
         return false;
       }
 
-      if (filters.overdue !== undefined && estimate.is_overdue !== filters.overdue) {
+      if (
+        filters.overdue !== undefined &&
+        estimate.is_overdue !== filters.overdue
+      ) {
         return false;
       }
 
@@ -182,7 +187,9 @@ export class EstimatesService {
         overdueBilling += 1;
       }
 
-      if ((estimate.payment_status ?? PaidStatus.UNPAID) === PaidStatus.UNPAID) {
+      if (
+        (estimate.payment_status ?? PaidStatus.UNPAID) === PaidStatus.UNPAID
+      ) {
         unpaidBilling += 1;
       }
     }
@@ -197,17 +204,23 @@ export class EstimatesService {
   }
 
   async findById(id: string) {
-    const estimate = await this.estimateModel.findById(asObjectId(id, 'estimate id')).exec();
+    const estimate = await this.estimateModel
+      .findById(asObjectId(id, 'estimate id'))
+      .exec();
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
     }
 
-    const [estimateWithBillingSummary] = await this.withBillingSummaries([estimate]);
+    const [estimateWithBillingSummary] = await this.withBillingSummaries([
+      estimate,
+    ]);
     return estimateWithBillingSummary;
   }
 
   async remove(id: string, actorUserId?: string) {
-    const estimate = await this.estimateModel.findById(asObjectId(id, 'estimate id')).exec();
+    const estimate = await this.estimateModel
+      .findById(asObjectId(id, 'estimate id'))
+      .exec();
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
     }
@@ -226,9 +239,11 @@ export class EstimatesService {
     const canHardDelete =
       estimate.services.length === 0 &&
       estimate.payment_status === PaidStatus.UNPAID &&
-      [EstimateStatus.SCHEDULED, EstimateStatus.CANCELLED, EstimateStatus.NO_SHOW].includes(
-        estimate.estimate_status,
-      );
+      [
+        EstimateStatus.SCHEDULED,
+        EstimateStatus.CANCELLED,
+        EstimateStatus.NO_SHOW,
+      ].includes(estimate.estimate_status);
 
     if (!canHardDelete) {
       throw new ConflictException(
@@ -245,7 +260,9 @@ export class EstimatesService {
           id,
           session,
         );
-        await this.estimateModel.deleteOne({ _id: estimate._id }, { session }).exec();
+        await this.estimateModel
+          .deleteOne({ _id: estimate._id }, { session })
+          .exec();
       });
     } finally {
       await session.endSession();
@@ -264,7 +281,9 @@ export class EstimatesService {
   }
 
   async update(id: string, payload: UpdateEstimateDto, actorUserId?: string) {
-    const estimate = await this.estimateModel.findById(asObjectId(id, 'estimate id')).exec();
+    const estimate = await this.estimateModel
+      .findById(asObjectId(id, 'estimate id'))
+      .exec();
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
     }
@@ -321,7 +340,8 @@ export class EstimatesService {
       })),
     }));
 
-    estimate.estimate_status = payload.estimate_status ?? estimate.estimate_status;
+    estimate.estimate_status =
+      payload.estimate_status ?? estimate.estimate_status;
 
     await this.estimateDataService.applyEstimateUpdate(estimate, {
       title: payload.title ?? estimate.title,
@@ -378,7 +398,9 @@ export class EstimatesService {
     payload: UpdateEstimateStatusDto,
     actorUserId?: string,
   ) {
-    const estimate = await this.estimateModel.findById(asObjectId(id, 'estimate id')).exec();
+    const estimate = await this.estimateModel
+      .findById(asObjectId(id, 'estimate id'))
+      .exec();
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
     }
@@ -415,7 +437,9 @@ export class EstimatesService {
     payload: UpdateEstimatePaymentStatusDto,
     actorUserId?: string,
   ) {
-    const estimate = await this.estimateModel.findById(asObjectId(id, 'estimate id')).exec();
+    const estimate = await this.estimateModel
+      .findById(asObjectId(id, 'estimate id'))
+      .exec();
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
     }
@@ -509,6 +533,7 @@ export class EstimatesService {
     payment_type?: PaymentType;
     due_date?: Date | null;
     services: CreateEstimateDto['services'];
+    source_metadata?: CreateEstimateDto['source_metadata'];
   }) {
     const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -527,6 +552,7 @@ export class EstimatesService {
           payment_status: input.payment_status,
           payment_type: input.payment_type,
           due_date: input.due_date ?? null,
+          source_metadata: input.source_metadata ?? null,
           services: input.services,
         });
       } catch (error) {
@@ -623,10 +649,20 @@ export class EstimatesService {
       services: this.serializeServices(
         rawEstimate.services as Array<Record<string, unknown>> | undefined,
       ),
+      source_metadata: this.serializeSourceMetadata(
+        rawEstimate.source_metadata as
+          | Record<string, unknown>
+          | null
+          | undefined,
+      ),
       labor_total:
-        typeof rawEstimate.labor_total === 'number' ? rawEstimate.labor_total : 0,
+        typeof rawEstimate.labor_total === 'number'
+          ? rawEstimate.labor_total
+          : 0,
       parts_total:
-        typeof rawEstimate.parts_total === 'number' ? rawEstimate.parts_total : 0,
+        typeof rawEstimate.parts_total === 'number'
+          ? rawEstimate.parts_total
+          : 0,
       total: typeof rawEstimate.total === 'number' ? rawEstimate.total : 0,
       created_at: this.toIsoString(
         rawEstimate.created_at as Date | string | null | undefined,
@@ -637,6 +673,32 @@ export class EstimatesService {
       is_overdue: isOverdue,
       ...resolvedBillingSummary,
       ...workflowSummary,
+    };
+  }
+
+  private serializeSourceMetadata(metadata?: Record<string, unknown> | null) {
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    const stringOrNull = (value: unknown) =>
+      typeof value === 'string' && value.trim().length > 0 ? value : null;
+
+    return {
+      source_system: stringOrNull(metadata.source_system) ?? 'shopmonkey',
+      document_kind: stringOrNull(metadata.document_kind),
+      external_order_id: stringOrNull(metadata.external_order_id),
+      external_reference_number: stringOrNull(
+        metadata.external_reference_number,
+      ),
+      external_invoice_number: stringOrNull(metadata.external_invoice_number),
+      order_path: stringOrNull(metadata.order_path),
+      shop_timezone: stringOrNull(metadata.shop_timezone),
+      source_state_label: stringOrNull(metadata.source_state_label),
+      invoice_status: stringOrNull(metadata.invoice_status),
+      appointment_status: stringOrNull(metadata.appointment_status),
+      created_at_shop_time: stringOrNull(metadata.created_at_shop_time),
+      invoiced_at_shop_time: stringOrNull(metadata.invoiced_at_shop_time),
     };
   }
 
@@ -655,8 +717,10 @@ export class EstimatesService {
       part_lines: this.serializePartLines(
         service.part_lines as Array<Record<string, unknown>> | undefined,
       ),
-      labor_total: typeof service.labor_total === 'number' ? service.labor_total : 0,
-      parts_total: typeof service.parts_total === 'number' ? service.parts_total : 0,
+      labor_total:
+        typeof service.labor_total === 'number' ? service.labor_total : 0,
+      parts_total:
+        typeof service.parts_total === 'number' ? service.parts_total : 0,
       total: typeof service.total === 'number' ? service.total : 0,
     }));
   }
@@ -687,7 +751,8 @@ export class EstimatesService {
       id: this.serializeId(line._id, 'estimate part line id'),
       name: typeof line.name === 'string' ? line.name : '',
       part_number:
-        typeof line.part_number === 'string' && line.part_number.trim().length > 0
+        typeof line.part_number === 'string' &&
+        line.part_number.trim().length > 0
           ? line.part_number
           : null,
       quantity: typeof line.quantity === 'number' ? line.quantity : 0,
@@ -717,7 +782,11 @@ export class EstimatesService {
       return value;
     }
 
-    if (value && typeof value === 'object' && typeof value.toString === 'function') {
+    if (
+      value &&
+      typeof value === 'object' &&
+      typeof value.toString === 'function'
+    ) {
       const serialized = value.toString();
       if (serialized && serialized !== '[object Object]') {
         return serialized;
@@ -754,7 +823,9 @@ export class EstimatesService {
       estimates.map(async (estimate) => {
         const estimateId = String(estimate._id);
         const billingSummary =
-          await this.estimateInvoiceService.getEstimateBillingSummary(estimateId);
+          await this.estimateInvoiceService.getEstimateBillingSummary(
+            estimateId,
+          );
 
         return [estimateId, billingSummary] as const;
       }),
@@ -813,7 +884,8 @@ export class EstimatesService {
     }
 
     if (
-      billingSummary.invoice_status === EstimateInvoiceSnapshotStatus.ACCEPTED ||
+      billingSummary.invoice_status ===
+        EstimateInvoiceSnapshotStatus.ACCEPTED ||
       billingSummary.invoice_status === EstimateInvoiceSnapshotStatus.SENT
     ) {
       return {
@@ -856,9 +928,7 @@ export class EstimatesService {
     };
   }
 
-  private getDashboardOverviewEstimates(
-    estimates: DashboardSummaryEstimate[],
-  ) {
+  private getDashboardOverviewEstimates(estimates: DashboardSummaryEstimate[]) {
     const prioritizedEstimates = [
       ...estimates.filter((estimate) =>
         this.isDashboardPriorityEstimate(estimate),

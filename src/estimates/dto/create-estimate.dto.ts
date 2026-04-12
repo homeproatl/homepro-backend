@@ -157,6 +157,68 @@ export class CreateEstimateServiceDto {
   part_lines!: CreateEstimatePartLineDto[];
 }
 
+export class EstimateSourceMetadataDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  source_system?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  document_kind?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  external_order_id?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  external_reference_number?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  external_invoice_number?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  order_path?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  shop_timezone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  source_state_label?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  invoice_status?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  appointment_status?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  created_at_shop_time?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  invoiced_at_shop_time?: string | null;
+}
+
 export class CreateEstimateDto {
   @IsString()
   @MaxLength(120)
@@ -203,6 +265,11 @@ export class CreateEstimateDto {
   @IsOptional()
   @IsDateString()
   due_date?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EstimateSourceMetadataDto)
+  source_metadata?: EstimateSourceMetadataDto | null;
 
   @IsArray()
   @ArrayMinSize(1)

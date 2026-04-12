@@ -67,6 +67,21 @@ type EstimateServiceWriteInput = {
   }[];
 };
 
+type EstimateSourceMetadataWriteInput = {
+  source_system?: string;
+  document_kind?: string | null;
+  external_order_id?: string | null;
+  external_reference_number?: string | null;
+  external_invoice_number?: string | null;
+  order_path?: string | null;
+  shop_timezone?: string | null;
+  source_state_label?: string | null;
+  invoice_status?: string | null;
+  appointment_status?: string | null;
+  created_at_shop_time?: string | null;
+  invoiced_at_shop_time?: string | null;
+};
+
 type EstimateWriteInput = {
   title: string;
   customer_id: ObjectIdLike;
@@ -80,6 +95,7 @@ type EstimateWriteInput = {
   payment_status?: PaidStatus;
   payment_type?: PaymentType;
   due_date?: Date | null;
+  source_metadata?: EstimateSourceMetadataWriteInput | null;
   services: EstimateServiceWriteInput[];
 };
 
@@ -106,7 +122,9 @@ export class EstimateDataService {
     private readonly estimateDomainService: EstimateDomainService,
   ) {}
 
-  async createEstimate(input: EstimateWriteInput & { estimate_number: string }) {
+  async createEstimate(
+    input: EstimateWriteInput & { estimate_number: string },
+  ) {
     const prepared = await this.prepareEstimateWrite(input);
 
     return this.estimateModel.create({
@@ -123,6 +141,7 @@ export class EstimateDataService {
       payment_status: input.payment_status ?? PaidStatus.UNPAID,
       payment_type: input.payment_type ?? PaymentType.POS_CARD,
       due_date: input.due_date ?? null,
+      source_metadata: this.normalizeSourceMetadata(input.source_metadata),
       services: prepared.services,
       labor_total: prepared.labor_total,
       parts_total: prepared.parts_total,
@@ -134,10 +153,14 @@ export class EstimateDataService {
     estimate: EstimateDocument,
     input: EstimateWriteInput,
   ): Promise<EstimateDocument> {
-    const prepared = await this.prepareEstimateWrite({
-      ...input,
-      title: input.title,
-    }, String(estimate._id), estimate);
+    const prepared = await this.prepareEstimateWrite(
+      {
+        ...input,
+        title: input.title,
+      },
+      String(estimate._id),
+      estimate,
+    );
 
     estimate.title = input.title.trim();
     estimate.customer_id = prepared.customer._id;
@@ -158,6 +181,37 @@ export class EstimateDataService {
     return estimate;
   }
 
+  private normalizeSourceMetadata(
+    metadata?: EstimateSourceMetadataWriteInput | null,
+  ) {
+    if (!metadata) {
+      return null;
+    }
+
+    const normalize = (value?: string | null) => {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    return {
+      source_system: normalize(metadata.source_system) ?? 'shopmonkey',
+      document_kind: normalize(metadata.document_kind),
+      external_order_id: normalize(metadata.external_order_id),
+      external_reference_number: normalize(metadata.external_reference_number),
+      external_invoice_number: normalize(metadata.external_invoice_number),
+      order_path: normalize(metadata.order_path),
+      shop_timezone: normalize(metadata.shop_timezone),
+      source_state_label: normalize(metadata.source_state_label),
+      invoice_status: normalize(metadata.invoice_status),
+      appointment_status: normalize(metadata.appointment_status),
+      created_at_shop_time: normalize(metadata.created_at_shop_time),
+      invoiced_at_shop_time: normalize(metadata.invoiced_at_shop_time),
+    };
+  }
+
   private async prepareEstimateWrite(
     input: EstimateWriteInput,
     estimateId?: string,
@@ -167,7 +221,9 @@ export class EstimateDataService {
       throw new BadRequestException('At least one service is required');
     }
 
-    const customer = await this.customerModel.findById(input.customer_id).exec();
+    const customer = await this.customerModel
+      .findById(input.customer_id)
+      .exec();
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
@@ -211,7 +267,9 @@ export class EstimateDataService {
 
     let assignedUser: UserDocument | null = null;
     if (input.assigned_user_id) {
-      assignedUser = await this.userModel.findById(input.assigned_user_id).exec();
+      assignedUser = await this.userModel
+        .findById(input.assigned_user_id)
+        .exec();
       if (!assignedUser) {
         throw new NotFoundException('Assigned user not found');
       }
@@ -262,7 +320,10 @@ export class EstimateDataService {
       }
     }
 
-    const services = await this.prepareServices(input.services, currentEstimate);
+    const services = await this.prepareServices(
+      input.services,
+      currentEstimate,
+    );
     const totals = calculateEstimateTotals(services);
 
     return {
@@ -334,7 +395,10 @@ export class EstimateDataService {
 
     return Promise.all(
       services.map(async (service) => {
-        if (service.labor_lines.length === 0 && service.part_lines.length === 0) {
+        if (
+          service.labor_lines.length === 0 &&
+          service.part_lines.length === 0
+        ) {
           throw new BadRequestException(
             'Each service must include at least one labor or part row.',
           );
@@ -363,8 +427,8 @@ export class EstimateDataService {
         }
         const note =
           service.note !== undefined
-            ? service.note ?? null
-            : template?.note ?? null;
+            ? (service.note ?? null)
+            : (template?.note ?? null);
 
         const preparedLaborTags = await Promise.all(
           service.labor_lines.map((line) =>
@@ -447,16 +511,18 @@ export class EstimateDataService {
 
   private resolveLaborTechnicianId(input: {
     assignedUserId?: string | null;
-    techniciansById: Map<string, Pick<UserDocument, '_id' | 'is_active' | 'role'>>;
+    techniciansById: Map<
+      string,
+      Pick<UserDocument, '_id' | 'is_active' | 'role'>
+    >;
     currentLaborTechnicianIds: Set<string>;
   }) {
     const normalizedId = input.assignedUserId?.trim() ?? '';
     if (!normalizedId) {
       return null;
     }
-    const isCurrentAssignment = input.currentLaborTechnicianIds.has(
-      normalizedId,
-    );
+    const isCurrentAssignment =
+      input.currentLaborTechnicianIds.has(normalizedId);
 
     const technician = input.techniciansById.get(normalizedId);
     if (!technician) {
