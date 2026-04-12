@@ -86,6 +86,7 @@ type InvoiceServiceSnapshot = {
   estimate_service_id: string;
   canned_service_id: string | null;
   name: string;
+  note: string | null;
   labor_lines: InvoiceLaborSnapshot[];
   part_lines: InvoicePartSnapshot[];
   labor_total: number;
@@ -574,6 +575,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           ? String(service.canned_service_id)
           : null,
         name: service.name,
+        note: service.note ?? null,
         labor_lines: service.labor_lines.map((line) => ({
           description: line.description,
           hours: line.hours,
@@ -1034,6 +1036,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
   private getInvoiceServiceRows(invoice: InvoiceRenderPayload) {
     return invoice.services_snapshot.map((line) => ({
       name: line.name,
+      note: line.note,
       laborTotal: line.labor_total,
       partsTotal: line.parts_total,
       total: line.total,

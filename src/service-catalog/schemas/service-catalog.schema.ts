@@ -74,6 +74,9 @@ export class ServiceCatalog {
   @Prop({ required: true, trim: true })
   normalized_name!: string;
 
+  @Prop({ type: String, trim: true, default: null })
+  note!: string | null;
+
   @Prop({ type: Boolean, default: true })
   is_active!: boolean;
 

@@ -288,6 +288,7 @@ export class EstimatesService {
         ? String(service.canned_service_id)
         : null,
       name: service.name,
+      note: service.note ?? null,
       labor_lines: service.labor_lines.map((line) => ({
         description: line.description,
         assigned_user_id: line.assigned_user_id
@@ -296,6 +297,7 @@ export class EstimatesService {
         hours: line.hours,
         rate: line.rate,
         discount_percent: line.discount_percent,
+        is_completed: line.is_completed ?? false,
         tags: (line.tags ?? []).map((tag) => ({
           id: tag.tag_id ? String(tag.tag_id) : null,
           scope: 'LABOR' as const,
@@ -646,6 +648,7 @@ export class EstimatesService {
         'canned service id',
       ),
       name: typeof service.name === 'string' ? service.name : '',
+      note: typeof service.note === 'string' ? service.note : null,
       labor_lines: this.serializeLaborLines(
         service.labor_lines as Array<Record<string, unknown>> | undefined,
       ),
@@ -670,6 +673,7 @@ export class EstimatesService {
       rate: typeof line.rate === 'number' ? line.rate : 0,
       discount_percent:
         typeof line.discount_percent === 'number' ? line.discount_percent : 0,
+      is_completed: Boolean(line.is_completed),
       subtotal: typeof line.subtotal === 'number' ? line.subtotal : 0,
       tags: this.serializeEmbeddedTags(
         line.tags as Array<Record<string, unknown>> | undefined,

@@ -32,6 +32,7 @@ describe('estimate write DTOs', () => {
                 hours: 1,
                 rate: 100,
                 discount_percent: 0,
+                is_completed: true,
               },
             ],
             part_lines: [
@@ -59,6 +60,7 @@ describe('estimate write DTOs', () => {
     expect(transformed.services[0].labor_lines[0].assigned_user_id).toBe(
       '507f1f77bcf86cd799439014',
     );
+    expect(transformed.services[0].labor_lines[0].is_completed).toBe(true);
     expect(transformed.services[0].part_lines[0].part_number).toBe('BP-100');
   });
 

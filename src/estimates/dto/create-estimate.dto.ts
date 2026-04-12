@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsBoolean,
   MinLength,
   Max,
   MaxLength,
@@ -71,6 +72,11 @@ export class CreateEstimateLaborLineDto {
   discount_percent = 0;
 
   @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  is_completed?: boolean;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(12)
   @ValidateNested({ each: true })
@@ -131,6 +137,12 @@ export class CreateEstimateServiceDto {
   @MinLength(1)
   @MaxLength(160)
   name!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(2000)
+  note?: string | null;
 
   @IsArray()
   @ArrayMaxSize(100)

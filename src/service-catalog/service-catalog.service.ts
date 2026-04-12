@@ -23,6 +23,7 @@ import {
 
 type SeedService = {
   name: string;
+  note?: string | null;
   labor_lines: CreateServiceDto['labor_lines'];
   part_lines: CreateServiceDto['part_lines'];
 };
@@ -80,6 +81,7 @@ const MINIMAL_SERVICES: SeedService[] = [
 type SerializedServiceCatalog = Record<string, unknown> & {
   id: string;
   name: string;
+  note: string | null;
   usage_count: number;
   is_active: boolean;
   labor_lines: Array<{
@@ -346,6 +348,7 @@ export class ServiceCatalogService implements OnModuleInit {
     return {
       id: this.serializeId(raw._id, 'canned service id'),
       name: service.name,
+      note: typeof raw.note === 'string' ? raw.note : null,
       is_active: service.is_active !== false,
       labor_lines: this.serializeLaborLines(raw.labor_lines),
       part_lines: this.serializePartLines(raw.part_lines),
@@ -375,6 +378,7 @@ export class ServiceCatalogService implements OnModuleInit {
       return {
         id: this.serializeId(raw._id, 'canned service id'),
         name: service.name,
+        note: typeof raw.note === 'string' ? raw.note : null,
         is_active: service.is_active !== false,
         labor_lines: this.serializeLaborLines(raw.labor_lines),
         part_lines: this.serializePartLines(raw.part_lines),
@@ -489,6 +493,7 @@ export class ServiceCatalogService implements OnModuleInit {
     const service = await this.serviceModel.create({
       name,
       normalized_name: this.normalizeServiceName(name),
+      note: payload.note ?? null,
       is_active: true,
       ...totals,
     });
@@ -533,6 +538,10 @@ export class ServiceCatalogService implements OnModuleInit {
     if (payload.name !== undefined) {
       service.name = nextName;
       service.normalized_name = this.normalizeServiceName(nextName);
+    }
+
+    if (payload.note !== undefined) {
+      service.note = payload.note ?? null;
     }
 
     const totals = await this.toServiceTotals({

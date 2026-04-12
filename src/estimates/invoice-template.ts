@@ -20,6 +20,7 @@ export type InvoiceDocumentPartLineItem = {
 
 export type InvoiceDocumentServiceGroup = {
   name: string;
+  note: string | null;
   laborTotal: number;
   partsTotal: number;
   total: number;
@@ -183,6 +184,11 @@ export function renderInvoiceDocumentHtml(
             <div>
               <p style="margin:0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#71717a;">Service</p>
               <p style="margin:6px 0 0;font-size:18px;font-weight:600;">${escapeHtml(service.name)}</p>
+              ${
+                service.note
+                  ? `<p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#52525b;">${escapeHtml(service.note)}</p>`
+                  : ''
+              }
             </div>
             <div style="text-align:right;">
               <p style="margin:0;font-size:12px;color:#71717a;">Labor ${formatCurrency(service.laborTotal)}</p>

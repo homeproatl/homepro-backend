@@ -110,6 +110,12 @@ export class CreateServiceDto {
   @MaxLength(160)
   name!: string;
 
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(2000)
+  note?: string | null;
+
   @IsArray()
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })

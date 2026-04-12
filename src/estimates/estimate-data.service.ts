@@ -36,12 +36,14 @@ type ObjectIdLike = Types.ObjectId | string;
 type EstimateServiceWriteInput = {
   canned_service_id?: string | null;
   name: string;
+  note?: string | null;
   labor_lines: {
     description: string;
     assigned_user_id?: string | null;
     hours: number;
     rate: number;
     discount_percent?: number;
+    is_completed?: boolean;
     tags?: Array<{
       id?: string | null;
       scope: TagScope;
@@ -359,6 +361,10 @@ export class EstimateDataService {
         if (!name) {
           throw new BadRequestException('Service name is required');
         }
+        const note =
+          service.note !== undefined
+            ? service.note ?? null
+            : template?.note ?? null;
 
         const preparedLaborTags = await Promise.all(
           service.labor_lines.map((line) =>
@@ -382,6 +388,7 @@ export class EstimateDataService {
             hours: line.hours,
             rate: line.rate,
             discountPercent: line.discount_percent ?? 0,
+            isCompleted: line.is_completed ?? false,
             tags: preparedLaborTags[index].map((tag) => ({
               id: tag.tag_id ? String(tag.tag_id) : null,
               scope: tag.scope,
@@ -408,6 +415,7 @@ export class EstimateDataService {
         return {
           canned_service_id: template?._id ?? null,
           name,
+          note,
           labor_lines: totals.labor_lines.map((line) => ({
             ...line,
             assigned_user_id: line.assigned_user_id

@@ -29,6 +29,9 @@ export class EstimateLaborLine {
   @Prop({ required: true, min: 0, max: 100, default: 0 })
   discount_percent!: number;
 
+  @Prop({ required: true, default: false })
+  is_completed!: boolean;
+
   @Prop({ required: true, min: 0, default: 0 })
   subtotal!: number;
 
@@ -78,6 +81,9 @@ export class EstimateServiceEntry {
 
   @Prop({ required: true, trim: true })
   name!: string;
+
+  @Prop({ type: String, trim: true, default: null })
+  note!: string | null;
 
   @Prop({
     type: [EstimateLaborLineSchema],

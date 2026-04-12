@@ -21,6 +21,7 @@ export type LaborLineInput = {
   hours: number;
   rate: number;
   discountPercent?: number;
+  isCompleted?: boolean;
   tags?: Array<LineTagInput | CalculatedLineTag>;
 };
 
@@ -40,6 +41,7 @@ export type CalculatedLaborLine = {
   hours: number;
   rate: number;
   discount_percent: number;
+  is_completed: boolean;
   subtotal: number;
   tags: CalculatedLineTag[];
 };
@@ -139,6 +141,7 @@ export function calculateServiceTotals(input: {
       hours: line.hours,
       rate: line.rate,
       discount_percent: discountPercent,
+      is_completed: line.isCompleted ?? false,
       subtotal: calculateLaborSubtotal(line.hours, line.rate, discountPercent),
       tags: (line.tags ?? []).map((tag) => ({
         tag_id: resolveCalculatedTagId(tag),
