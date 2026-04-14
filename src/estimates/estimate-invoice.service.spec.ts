@@ -1,5 +1,8 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { renderInvoiceEmailMessageHtml } from './invoice-template';
+import {
+  renderInvoiceDocumentHtml,
+  renderInvoiceEmailMessageHtml,
+} from './invoice-template';
 import { EstimateInvoiceService } from './estimate-invoice.service';
 
 describe('EstimateInvoiceService', () => {
@@ -203,6 +206,63 @@ describe('EstimateInvoiceService', () => {
 
     expect(html).toContain('Invoice INV-123456');
     expect(html).toContain('Amount due');
+  });
+
+  it('renders invoice pdf html with document metadata, line item table, and totals summary', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-123456',
+      estimateNumber: 'EST-001',
+      title: 'Brake Service',
+      timeZone: 'America/New_York',
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'ABC-123 · Toyota Camry',
+      vehicleVin: 'VIN-123',
+      vehiclePlate: 'ABC-123',
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'UNPAID',
+      paymentType: 'POS_CARD',
+      total: 135,
+      services: [
+        {
+          name: 'Brake Service',
+          note: 'Front brake service',
+          laborTotal: 100,
+          partsTotal: 35,
+          total: 135,
+          laborLines: [
+            {
+              description: 'Brake labor',
+              hours: 1,
+              rate: 100,
+              subTotal: 100,
+            },
+          ],
+          partLines: [
+            {
+              description: 'Brake pads',
+              partNumber: 'BP-100',
+              quantity: 1,
+              price: 35,
+              subTotal: 35,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Total Due');
+    expect(html).toContain('Document No.');
+    expect(html).toContain('Payment Type Pos Card');
+    expect(html).toContain('Labor subtotal');
+    expect(html).toContain('Parts subtotal');
+    expect(html).toContain('Total due');
+    expect(html).toContain('Brake Service');
+    expect(html).toContain('Brake labor');
+    expect(html).toContain('Part # BP-100');
   });
 
   it('serializes invoice snapshots without leaking raw Mongo fields', () => {

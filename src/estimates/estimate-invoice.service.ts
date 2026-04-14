@@ -1192,6 +1192,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       dueDate: invoice.due_date_snapshot,
       generatedAt: invoice.generated_at,
       paymentStatus: invoice.payment_status_snapshot,
+      paymentType: invoice.payment_type_snapshot,
       total: invoice.total,
       services: this.getInvoiceServiceRows(invoice),
       mode:
