@@ -32,6 +32,32 @@ describe('ListEstimatesQueryDto', () => {
     });
   });
 
+  it('accepts pagination, search, status, and sort filters', async () => {
+    const transformed = (await pipe.transform(
+      {
+        paginated: 'true',
+        page: '2',
+        page_size: '25',
+        search: 'brake',
+        status: 'SCHEDULED',
+        sort: 'newest',
+      },
+      {
+        type: 'query',
+        metatype: ListEstimatesQueryDto,
+      },
+    )) as ListEstimatesQueryDto;
+
+    expect(transformed).toEqual({
+      paginated: true,
+      page: 2,
+      page_size: 25,
+      search: 'brake',
+      status: 'SCHEDULED',
+      sort: 'newest',
+    });
+  });
+
   it('rejects malformed ids', async () => {
     await expect(
       pipe.transform(

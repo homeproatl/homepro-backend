@@ -50,6 +50,34 @@ export class CustomersService {
     return customers.map((customer) => this.toCustomerContract(customer));
   }
 
+  async findPage(query: ListCustomersQueryDto = {}) {
+    const searchQuery = this.buildSearchQuery(query.search);
+    const page = query.page ?? 1;
+    const pageSize = query.page_size ?? 25;
+    const skip = (page - 1) * pageSize;
+
+    const [customers, total] = await Promise.all([
+      this.customerModel
+        .find(searchQuery)
+        .sort({ is_archived: 1, created_at: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .exec(),
+      this.customerModel.countDocuments(searchQuery).exec(),
+    ]);
+
+    const pageCount = total === 0 ? 1 : Math.ceil(total / pageSize);
+    const currentPage = Math.min(page, pageCount);
+
+    return {
+      items: customers.map((customer) => this.toCustomerContract(customer)),
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      page_count: pageCount,
+    };
+  }
+
   async findById(id: string) {
     const customer = await this.findCustomerDocumentById(id);
     return this.toCustomerContract(customer);

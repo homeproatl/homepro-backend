@@ -35,6 +35,10 @@ export class EstimatesController {
 
   @Get()
   findAll(@Query() query: ListEstimatesQueryDto) {
+    if (query.paginated) {
+      return this.estimatesService.findPage(query);
+    }
+
     return this.estimatesService.findAll(query);
   }
 

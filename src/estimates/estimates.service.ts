@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, PipelineStage } from 'mongoose';
 import { generateOrderId } from '../common/utils/order-id';
 import { asObjectId } from '../common/utils/object-id';
 import { PaidStatus } from '../common/enums/paid-status.enum';
@@ -56,6 +56,46 @@ type DashboardSummaryEstimate = {
   due_date?: string | Date | null;
   is_overdue: boolean;
   admin_invoice_workflow_state: AdminInvoiceWorkflowState;
+};
+
+type EstimateListRecord = {
+  _id: unknown;
+  estimate_number?: string;
+  title?: string;
+  customer_id: unknown;
+  vehicle_id: unknown;
+  scheduled_start?: Date | string | null;
+  scheduled_end?: Date | string | null;
+  assigned_user_id?: unknown;
+  complaint_or_request?: string | null;
+  notes?: string | null;
+  estimate_status?: EstimateStatus;
+  payment_status?: PaidStatus;
+  payment_type?: PaymentType;
+  due_date?: Date | string | null;
+  labor_total?: number;
+  parts_total?: number;
+  total?: number;
+  created_at?: Date | string | null;
+  updated_at?: Date | string | null;
+  services_count?: number;
+  customer_name?: string | null;
+  vehicle_label?: string | null;
+};
+
+type EstimateListItem = ReturnType<EstimatesService['withDerivedEstimateListItem']>;
+type EstimatePageAggregateRecord = EstimateListRecord & {
+  customer_first_name?: string | null;
+  customer_last_name?: string | null;
+  customer_email?: string | null;
+  vehicle_make?: string | null;
+  vehicle_model?: string | null;
+  vehicle_license_plate?: string | null;
+  invoice_status?: EstimateInvoiceSnapshotStatus | null;
+  latest_invoice_number?: string | null;
+  invoice_ready?: boolean;
+  send_ready?: boolean;
+  invoice_needs_refresh?: boolean;
 };
 
 @Injectable()
@@ -122,37 +162,38 @@ export class EstimatesService {
       query.vehicle_id = asObjectId(filters.vehicle_id, 'vehicle id');
     }
 
-    const estimates = await this.estimateModel
-      .find(query)
-      .sort({ created_at: -1 })
-      .exec();
-    const estimatesWithBillingSummaries =
-      await this.withBillingSummaries(estimates);
+    return this.getFilteredEstimateList(query, filters);
+  }
 
-    return estimatesWithBillingSummaries.filter((estimate) => {
-      if (
-        filters.invoice_status &&
-        (estimate.invoice_status ?? 'NONE') !== filters.invoice_status
-      ) {
-        return false;
-      }
+  async findPage(filters: ListEstimatesQueryDto = {}) {
+    const query: Record<string, unknown> = {};
 
-      if (
-        filters.ready_to_invoice !== undefined &&
-        estimate.invoice_ready !== filters.ready_to_invoice
-      ) {
-        return false;
-      }
+    if (filters.customer_id) {
+      query.customer_id = asObjectId(filters.customer_id, 'customer id');
+    }
 
-      if (
-        filters.overdue !== undefined &&
-        estimate.is_overdue !== filters.overdue
-      ) {
-        return false;
-      }
+    if (filters.vehicle_id) {
+      query.vehicle_id = asObjectId(filters.vehicle_id, 'vehicle id');
+    }
 
-      return true;
-    });
+    const page = filters.page ?? 1;
+    const pageSize = filters.page_size ?? 25;
+    const { items, total } = await this.findPaginatedEstimateList(
+      query,
+      filters,
+      page,
+      pageSize,
+    );
+    const pageCount = total === 0 ? 1 : Math.ceil(total / pageSize);
+    const currentPage = Math.min(page, pageCount);
+
+    return {
+      items,
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      page_count: pageCount,
+    };
   }
 
   async getDashboardSummary() {
@@ -489,10 +530,102 @@ export class EstimatesService {
     }
 
     const estimates = await this.estimateModel
-      .find(query)
-      .sort({ scheduled_start: 1 })
+      .aggregate<
+        EstimateListRecord & {
+          customer_first_name?: string | null;
+          customer_last_name?: string | null;
+          vehicle_make?: string | null;
+          vehicle_model?: string | null;
+          vehicle_license_plate?: string | null;
+        }
+      >([
+        { $match: query },
+        {
+          $lookup: {
+            from: 'customers',
+            localField: 'customer_id',
+            foreignField: '_id',
+            as: 'customer',
+          },
+        },
+        {
+          $lookup: {
+            from: 'vehicles',
+            localField: 'vehicle_id',
+            foreignField: '_id',
+            as: 'vehicle',
+          },
+        },
+        {
+          $addFields: {
+            customer_first_name: {
+              $let: {
+                vars: { current: { $first: '$customer' } },
+                in: '$$current.first_name',
+              },
+            },
+            customer_last_name: {
+              $let: {
+                vars: { current: { $first: '$customer' } },
+                in: '$$current.last_name',
+              },
+            },
+            vehicle_make: {
+              $let: {
+                vars: { current: { $first: '$vehicle' } },
+                in: '$$current.make',
+              },
+            },
+            vehicle_model: {
+              $let: {
+                vars: { current: { $first: '$vehicle' } },
+                in: '$$current.model',
+              },
+            },
+            vehicle_license_plate: {
+              $let: {
+                vars: { current: { $first: '$vehicle' } },
+                in: '$$current.license_plate',
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            customer: 0,
+            vehicle: 0,
+            services: 0,
+            source_metadata: 0,
+          },
+        },
+        {
+          $sort: {
+            scheduled_start: 1,
+            created_at: 1,
+          },
+        },
+      ])
       .exec();
-    return this.withBillingSummaries(estimates);
+
+    return estimates.map((estimate) =>
+      this.withDerivedEstimateListItem({
+        ...estimate,
+        customer_name: this.buildCustomerName({
+          first_name: estimate.customer_first_name ?? null,
+          last_name: estimate.customer_last_name ?? null,
+        }),
+        vehicle_label: this.buildVehicleLabel({
+          make:
+            typeof estimate.vehicle_make === 'string' ? estimate.vehicle_make : '',
+          model:
+            typeof estimate.vehicle_model === 'string' ? estimate.vehicle_model : '',
+          license_plate:
+            typeof estimate.vehicle_license_plate === 'string'
+              ? estimate.vehicle_license_plate
+              : null,
+        }),
+      }),
+    );
   }
 
   async getInvoicePreview(id: string) {
@@ -654,6 +787,89 @@ export class EstimatesService {
           | Record<string, unknown>
           | null
           | undefined,
+      ),
+      labor_total:
+        typeof rawEstimate.labor_total === 'number'
+          ? rawEstimate.labor_total
+          : 0,
+      parts_total:
+        typeof rawEstimate.parts_total === 'number'
+          ? rawEstimate.parts_total
+          : 0,
+      total: typeof rawEstimate.total === 'number' ? rawEstimate.total : 0,
+      created_at: this.toIsoString(
+        rawEstimate.created_at as Date | string | null | undefined,
+      ),
+      updated_at: this.toIsoString(
+        rawEstimate.updated_at as Date | string | null | undefined,
+      ),
+      is_overdue: isOverdue,
+      ...resolvedBillingSummary,
+      ...workflowSummary,
+    };
+  }
+
+  private withDerivedEstimateListItem(
+    rawEstimate: EstimateListRecord,
+    billingSummary?: EstimateBillingSummary,
+  ) {
+    const dueDate = rawEstimate.due_date ? new Date(rawEstimate.due_date) : null;
+    const paymentStatus =
+      (rawEstimate.payment_status as PaidStatus | undefined) ??
+      PaidStatus.UNPAID;
+    const isOverdue =
+      !!dueDate &&
+      dueDate.getTime() < Date.now() &&
+      paymentStatus !== PaidStatus.PAID;
+    const resolvedBillingSummary: EstimateBillingSummary = {
+      invoice_status: billingSummary?.invoice_status ?? null,
+      latest_invoice_number: billingSummary?.latest_invoice_number ?? null,
+      invoice_ready: billingSummary?.invoice_ready ?? false,
+      send_ready: billingSummary?.send_ready ?? false,
+      invoice_needs_refresh: billingSummary?.invoice_needs_refresh ?? false,
+    };
+    const workflowSummary = this.getAdminInvoiceWorkflowSummary(
+      resolvedBillingSummary,
+    );
+
+    return {
+      id: this.serializeId(rawEstimate._id, 'estimate id'),
+      estimate_number:
+        typeof rawEstimate.estimate_number === 'string'
+          ? rawEstimate.estimate_number
+          : '',
+      title: typeof rawEstimate.title === 'string' ? rawEstimate.title : '',
+      customer_id: this.serializeId(rawEstimate.customer_id, 'customer id'),
+      vehicle_id: this.serializeId(rawEstimate.vehicle_id, 'vehicle id'),
+      customer_name:
+        typeof rawEstimate.customer_name === 'string'
+          ? rawEstimate.customer_name
+          : null,
+      vehicle_label:
+        typeof rawEstimate.vehicle_label === 'string'
+          ? rawEstimate.vehicle_label
+          : null,
+      scheduled_start: this.toIsoString(
+        rawEstimate.scheduled_start as Date | string | null | undefined,
+      ),
+      scheduled_end: this.toIsoString(
+        rawEstimate.scheduled_end as Date | string | null | undefined,
+      ),
+      assigned_user_id: this.serializeNullableId(
+        rawEstimate.assigned_user_id,
+        'assigned user id',
+      ),
+      complaint_or_request:
+        typeof rawEstimate.complaint_or_request === 'string'
+          ? rawEstimate.complaint_or_request
+          : null,
+      notes:
+        typeof rawEstimate.notes === 'string' ? rawEstimate.notes : null,
+      estimate_status: rawEstimate.estimate_status as EstimateStatus,
+      payment_status: paymentStatus,
+      payment_type: rawEstimate.payment_type as PaymentType,
+      due_date: this.toIsoString(
+        rawEstimate.due_date as Date | string | null | undefined,
       ),
       labor_total:
         typeof rawEstimate.labor_total === 'number'
@@ -839,6 +1055,736 @@ export class EstimatesService {
         billingSummaries.get(String(estimate._id)),
       ),
     );
+  }
+
+  private async withBillingSummariesForList(estimates: EstimateListRecord[]) {
+    if (estimates.length === 0) {
+      return [];
+    }
+
+    const billingSummaries =
+      await this.estimateInvoiceService.getEstimateBillingSummariesForList(
+        estimates.map((estimate) => ({
+          estimate_id: this.serializeId(estimate._id, 'estimate id'),
+          customer_id: this.serializeId(estimate.customer_id, 'customer id'),
+          total: typeof estimate.total === 'number' ? estimate.total : 0,
+          services_count:
+            typeof estimate.services_count === 'number'
+              ? estimate.services_count
+              : 0,
+        })),
+      );
+
+    return estimates.map((estimate) =>
+      this.withDerivedEstimateListItem(
+        estimate,
+        billingSummaries.get(this.serializeId(estimate._id, 'estimate id')),
+      ),
+    );
+  }
+
+  private async findEstimateListRecords(query: Record<string, unknown>) {
+    const estimates = await this.estimateModel
+      .aggregate<EstimateListRecord>([
+        { $match: query },
+        { $sort: { created_at: -1 } },
+        {
+          $project: {
+            estimate_number: 1,
+            title: 1,
+            customer_id: 1,
+            vehicle_id: 1,
+            scheduled_start: 1,
+            scheduled_end: 1,
+            assigned_user_id: 1,
+            complaint_or_request: 1,
+            notes: 1,
+            estimate_status: 1,
+            payment_status: 1,
+            payment_type: 1,
+            due_date: 1,
+            labor_total: 1,
+            parts_total: 1,
+            total: 1,
+            created_at: 1,
+            updated_at: 1,
+            services_count: {
+              $size: {
+                $ifNull: ['$services', []],
+              },
+            },
+          },
+        },
+      ])
+      .exec();
+
+    if (estimates.length === 0) {
+      return [];
+    }
+
+    const customerIds = Array.from(
+      new Set(estimates.map((estimate) => this.serializeId(estimate.customer_id, 'customer id'))),
+    ).map((customerId) => asObjectId(customerId, 'customer id'));
+    const vehicleIds = Array.from(
+      new Set(estimates.map((estimate) => this.serializeId(estimate.vehicle_id, 'vehicle id'))),
+    ).map((vehicleId) => asObjectId(vehicleId, 'vehicle id'));
+
+    const [customers, vehicles] = await Promise.all([
+      this.estimateModel.db
+        .collection('customers')
+        .find(
+          { _id: { $in: customerIds } },
+          { projection: { first_name: 1, last_name: 1 } },
+        )
+        .toArray(),
+      this.estimateModel.db
+        .collection('vehicles')
+        .find(
+          { _id: { $in: vehicleIds } },
+          { projection: { make: 1, model: 1, license_plate: 1 } },
+        )
+        .toArray(),
+    ]);
+
+    const customerNamesById = new Map(
+      customers.map((customer) => [
+        String(customer._id),
+        `${typeof customer.first_name === 'string' ? customer.first_name : ''} ${
+          typeof customer.last_name === 'string' ? customer.last_name : ''
+        }`
+          .trim() || null,
+      ]),
+    );
+    const vehicleLabelsById = new Map(
+      vehicles.map((vehicle) => [
+        String(vehicle._id),
+        this.buildVehicleLabel({
+          make: typeof vehicle.make === 'string' ? vehicle.make : '',
+          model: typeof vehicle.model === 'string' ? vehicle.model : '',
+          license_plate:
+            typeof vehicle.license_plate === 'string'
+              ? vehicle.license_plate
+              : null,
+        }),
+      ]),
+    );
+
+    return estimates.map((estimate) => {
+      const estimateId = this.serializeId(estimate._id, 'estimate id');
+      return {
+        ...estimate,
+        _id: estimateId,
+        customer_name:
+          customerNamesById.get(
+            this.serializeId(estimate.customer_id, 'customer id'),
+          ) ?? null,
+        vehicle_label:
+          vehicleLabelsById.get(
+            this.serializeId(estimate.vehicle_id, 'vehicle id'),
+          ) ?? null,
+      };
+    });
+  }
+
+  private async getFilteredEstimateList(
+    query: Record<string, unknown>,
+    filters: ListEstimatesQueryDto,
+  ) {
+    const estimates = await this.findEstimateListRecords(query);
+    const estimatesWithBillingSummaries =
+      await this.withBillingSummariesForList(estimates);
+    const searchTerm = filters.search?.trim().toLowerCase() ?? '';
+    const nowMs = Date.now();
+    const sorted = estimatesWithBillingSummaries
+      .filter((estimate) => {
+        if (filters.status && estimate.estimate_status !== filters.status) {
+          return false;
+        }
+
+        if (
+          filters.invoice_status &&
+          (estimate.invoice_status ?? 'NONE') !== filters.invoice_status
+        ) {
+          return false;
+        }
+
+        if (
+          filters.admin_invoice_workflow_state &&
+          estimate.admin_invoice_workflow_state !==
+            filters.admin_invoice_workflow_state
+        ) {
+          return false;
+        }
+
+        if (
+          filters.ready_to_invoice !== undefined &&
+          estimate.invoice_ready !== filters.ready_to_invoice
+        ) {
+          return false;
+        }
+
+        if (
+          filters.overdue !== undefined &&
+          estimate.is_overdue !== filters.overdue
+        ) {
+          return false;
+        }
+
+        if (!searchTerm) {
+          return true;
+        }
+
+        const scheduleText = `${estimate.scheduled_start ?? ''} ${
+          estimate.scheduled_end ?? ''
+        }`;
+
+        return [
+          estimate.estimate_number,
+          estimate.title,
+          estimate.customer_name ?? estimate.customer_id,
+          estimate.vehicle_label ?? estimate.vehicle_id,
+          scheduleText,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(searchTerm);
+      })
+      .sort((left, right) =>
+        this.compareEstimateListItems(
+          left,
+          right,
+          filters.sort ?? 'nearest_upcoming',
+          nowMs,
+        ),
+      );
+
+    return sorted;
+  }
+
+  private async findPaginatedEstimateList(
+    query: Record<string, unknown>,
+    filters: ListEstimatesQueryDto,
+    page: number,
+    pageSize: number,
+  ) {
+    const now = new Date();
+    const sendRuntimeReady =
+      await this.estimateInvoiceService.isInvoiceSendRuntimeReady();
+    const searchTerm = filters.search?.trim();
+    const pipeline: PipelineStage[] = [
+      { $match: query },
+      {
+        $project: {
+          estimate_number: 1,
+          title: 1,
+          customer_id: 1,
+          vehicle_id: 1,
+          scheduled_start: 1,
+          scheduled_end: 1,
+          assigned_user_id: 1,
+          complaint_or_request: 1,
+          notes: 1,
+          estimate_status: 1,
+          payment_status: 1,
+          payment_type: 1,
+          due_date: 1,
+          labor_total: 1,
+          parts_total: 1,
+          total: 1,
+          created_at: 1,
+          updated_at: 1,
+          services_count: {
+            $size: {
+              $ifNull: ['$services', []],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: 'customer_id',
+          foreignField: '_id',
+          pipeline: [
+            {
+              $project: {
+                first_name: 1,
+                last_name: 1,
+                email: 1,
+              },
+            },
+          ],
+          as: 'customer',
+        },
+      },
+      {
+        $lookup: {
+          from: 'vehicles',
+          localField: 'vehicle_id',
+          foreignField: '_id',
+          pipeline: [
+            {
+              $project: {
+                make: 1,
+                model: 1,
+                license_plate: 1,
+              },
+            },
+          ],
+          as: 'vehicle',
+        },
+      },
+      {
+        $lookup: {
+          from: 'estimate_invoice_snapshots',
+          let: { estimateId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: ['$estimate_id', '$$estimateId'],
+                },
+              },
+            },
+            {
+              $sort: {
+                revision_number: -1,
+                created_at: -1,
+              },
+            },
+            { $limit: 1 },
+            {
+              $project: {
+                invoice_number: 1,
+                status: 1,
+              },
+            },
+          ],
+          as: 'latest_snapshot',
+        },
+      },
+      {
+        $addFields: {
+          customer: { $first: '$customer' },
+          vehicle: { $first: '$vehicle' },
+          latest_snapshot: { $first: '$latest_snapshot' },
+          scheduled_start_text: {
+            $cond: [
+              { $ne: ['$scheduled_start', null] },
+              {
+                $dateToString: {
+                  format: '%Y-%m-%dT%H:%M:%S.%LZ',
+                  date: '$scheduled_start',
+                  timezone: 'UTC',
+                },
+              },
+              '',
+            ],
+          },
+          scheduled_end_text: {
+            $cond: [
+              { $ne: ['$scheduled_end', null] },
+              {
+                $dateToString: {
+                  format: '%Y-%m-%dT%H:%M:%S.%LZ',
+                  date: '$scheduled_end',
+                  timezone: 'UTC',
+                },
+              },
+              '',
+            ],
+          },
+        },
+      },
+      {
+        $addFields: {
+          customer_first_name: { $ifNull: ['$customer.first_name', null] },
+          customer_last_name: { $ifNull: ['$customer.last_name', null] },
+          customer_email: { $ifNull: ['$customer.email', null] },
+          vehicle_make: { $ifNull: ['$vehicle.make', null] },
+          vehicle_model: { $ifNull: ['$vehicle.model', null] },
+          vehicle_license_plate: {
+            $ifNull: ['$vehicle.license_plate', null],
+          },
+          invoice_status: { $ifNull: ['$latest_snapshot.status', null] },
+          latest_invoice_number: {
+            $ifNull: ['$latest_snapshot.invoice_number', null],
+          },
+          has_customer_email: {
+            $gt: [
+              {
+                $strLenCP: {
+                  $trim: {
+                    input: { $ifNull: ['$customer.email', ''] },
+                  },
+                },
+              },
+              0,
+            ],
+          },
+          has_billable_lines: {
+            $not: {
+              $and: [
+                { $lte: [{ $ifNull: ['$total', 0] }, 0] },
+                { $eq: [{ $ifNull: ['$services_count', 0] }, 0] },
+              ],
+            },
+          },
+          is_overdue: {
+            $and: [
+              { $ne: ['$due_date', null] },
+              { $lt: ['$due_date', now] },
+              { $ne: ['$payment_status', PaidStatus.PAID] },
+            ],
+          },
+        },
+      },
+      {
+        $addFields: {
+          invoice_ready: {
+            $and: ['$has_customer_email', '$has_billable_lines'],
+          },
+          invoice_needs_refresh: {
+            $eq: ['$invoice_status', EstimateInvoiceSnapshotStatus.STALE],
+          },
+        },
+      },
+      {
+        $addFields: {
+          send_ready: {
+            $and: ['$invoice_ready', sendRuntimeReady],
+          },
+          admin_invoice_workflow_state: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $or: [
+                      {
+                        $eq: [
+                          '$invoice_status',
+                          EstimateInvoiceSnapshotStatus.STALE,
+                        ],
+                      },
+                      '$invoice_needs_refresh',
+                    ],
+                  },
+                  then: 'needs_resend',
+                },
+                {
+                  case: {
+                    $in: [
+                      '$invoice_status',
+                      [
+                        EstimateInvoiceSnapshotStatus.ACCEPTED,
+                        EstimateInvoiceSnapshotStatus.SENT,
+                      ],
+                    ],
+                  },
+                  then: 'sent',
+                },
+                {
+                  case: {
+                    $and: [
+                      {
+                        $eq: [
+                          '$invoice_status',
+                          EstimateInvoiceSnapshotStatus.ISSUED,
+                        ],
+                      },
+                      { $not: ['$send_ready'] },
+                    ],
+                  },
+                  then: 'blocked',
+                },
+                {
+                  case: {
+                    $or: [
+                      {
+                        $eq: [
+                          '$invoice_status',
+                          EstimateInvoiceSnapshotStatus.ISSUED,
+                        ],
+                      },
+                      '$send_ready',
+                    ],
+                  },
+                  then: 'ready_to_send',
+                },
+              ],
+              default: 'blocked',
+            },
+          },
+        },
+      },
+    ];
+
+    if (filters.status) {
+      pipeline.push({
+        $match: {
+          estimate_status: filters.status,
+        },
+      });
+    }
+
+    if (filters.invoice_status) {
+      pipeline.push({
+        $match: {
+          invoice_status:
+            filters.invoice_status === 'NONE' ? null : filters.invoice_status,
+        },
+      });
+    }
+
+    if (filters.admin_invoice_workflow_state) {
+      pipeline.push({
+        $match: {
+          admin_invoice_workflow_state: filters.admin_invoice_workflow_state,
+        },
+      });
+    }
+
+    if (filters.ready_to_invoice !== undefined) {
+      pipeline.push({
+        $match: {
+          invoice_ready: filters.ready_to_invoice,
+        },
+      });
+    }
+
+    if (filters.overdue !== undefined) {
+      pipeline.push({
+        $match: {
+          is_overdue: filters.overdue,
+        },
+      });
+    }
+
+    if (searchTerm) {
+      const searchRegex = new RegExp(this.escapeRegex(searchTerm), 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { estimate_number: searchRegex },
+            { title: searchRegex },
+            { customer_first_name: searchRegex },
+            { customer_last_name: searchRegex },
+            { vehicle_make: searchRegex },
+            { vehicle_model: searchRegex },
+            { vehicle_license_plate: searchRegex },
+            { scheduled_start_text: searchRegex },
+            { scheduled_end_text: searchRegex },
+          ],
+        },
+      });
+    }
+
+    if ((filters.sort ?? 'nearest_upcoming') === 'newest') {
+      pipeline.push({
+        $sort: {
+          created_at: -1,
+        },
+      });
+    } else {
+      pipeline.push(
+        {
+          $addFields: {
+            schedule_category: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $and: [
+                        { $ne: ['$scheduled_start', null] },
+                        { $ne: ['$scheduled_end', null] },
+                        { $lte: ['$scheduled_start', now] },
+                        { $gte: ['$scheduled_end', now] },
+                      ],
+                    },
+                    then: 0,
+                  },
+                  {
+                    case: {
+                      $and: [
+                        { $ne: ['$scheduled_start', null] },
+                        { $gt: ['$scheduled_start', now] },
+                      ],
+                    },
+                    then: 1,
+                  },
+                  {
+                    case: {
+                      $and: [
+                        { $ne: ['$scheduled_start', null] },
+                        { $lt: ['$scheduled_start', now] },
+                      ],
+                    },
+                    then: 2,
+                  },
+                ],
+                default: 3,
+              },
+            },
+            schedule_start_ms: {
+              $cond: [
+                { $ne: ['$scheduled_start', null] },
+                { $toLong: '$scheduled_start' },
+                Number.MAX_SAFE_INTEGER,
+              ],
+            },
+          },
+        },
+        {
+          $addFields: {
+            schedule_sort_value: {
+              $cond: [
+                { $eq: ['$schedule_category', 2] },
+                { $multiply: ['$schedule_start_ms', -1] },
+                '$schedule_start_ms',
+              ],
+            },
+          },
+        },
+        {
+          $sort: {
+            schedule_category: 1,
+            schedule_sort_value: 1,
+            created_at: -1,
+          },
+        },
+      );
+    }
+
+    pipeline.push({
+      $facet: {
+        metadata: [{ $count: 'total' }],
+        items: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+      },
+    });
+
+    const [result] = await this.estimateModel
+      .aggregate<{
+        metadata: Array<{ total: number }>;
+        items: EstimatePageAggregateRecord[];
+      }>(pipeline)
+      .exec();
+
+    const total = result?.metadata[0]?.total ?? 0;
+    const items = (result?.items ?? []).map((estimate) =>
+      this.withDerivedEstimateListItem(
+        {
+          ...estimate,
+          customer_name: this.buildCustomerName({
+            first_name: estimate.customer_first_name ?? null,
+            last_name: estimate.customer_last_name ?? null,
+          }),
+          vehicle_label: this.buildVehicleLabel({
+            make:
+              typeof estimate.vehicle_make === 'string'
+                ? estimate.vehicle_make
+                : '',
+            model:
+              typeof estimate.vehicle_model === 'string'
+                ? estimate.vehicle_model
+                : '',
+            license_plate:
+              typeof estimate.vehicle_license_plate === 'string'
+                ? estimate.vehicle_license_plate
+                : null,
+          }),
+        },
+        {
+          invoice_status: estimate.invoice_status ?? null,
+          latest_invoice_number: estimate.latest_invoice_number ?? null,
+          invoice_ready: estimate.invoice_ready === true,
+          send_ready: estimate.send_ready === true,
+          invoice_needs_refresh: estimate.invoice_needs_refresh === true,
+        },
+      ),
+    );
+
+    return { items, total };
+  }
+
+  private compareEstimateListItems(
+    left: EstimateListItem,
+    right: EstimateListItem,
+    sortMode: 'nearest_upcoming' | 'newest',
+    nowMs: number,
+  ) {
+    if (sortMode === 'newest') {
+      const leftCreatedAt = left.created_at ? new Date(left.created_at).getTime() : 0;
+      const rightCreatedAt = right.created_at ? new Date(right.created_at).getTime() : 0;
+      return rightCreatedAt - leftCreatedAt;
+    }
+
+    const getScheduleCategory = (estimate: EstimateListItem) => {
+      if (!estimate.scheduled_start || !estimate.scheduled_end) {
+        return 3;
+      }
+
+      const startMs = new Date(estimate.scheduled_start).getTime();
+      const endMs = new Date(estimate.scheduled_end).getTime();
+
+      if (startMs <= nowMs && nowMs <= endMs) {
+        return 0;
+      }
+
+      if (startMs > nowMs) {
+        return 1;
+      }
+
+      return 2;
+    };
+
+    const leftCategory = getScheduleCategory(left);
+    const rightCategory = getScheduleCategory(right);
+    if (leftCategory !== rightCategory) {
+      return leftCategory - rightCategory;
+    }
+
+    const leftStartMs = left.scheduled_start
+      ? new Date(left.scheduled_start).getTime()
+      : Number.POSITIVE_INFINITY;
+    const rightStartMs = right.scheduled_start
+      ? new Date(right.scheduled_start).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    if (leftCategory === 2) {
+      return rightStartMs - leftStartMs;
+    }
+
+    if (leftStartMs !== rightStartMs) {
+      return leftStartMs - rightStartMs;
+    }
+
+    const leftCreatedAt = left.created_at ? new Date(left.created_at).getTime() : 0;
+    const rightCreatedAt = right.created_at ? new Date(right.created_at).getTime() : 0;
+    return rightCreatedAt - leftCreatedAt;
+  }
+
+  private buildVehicleLabel(vehicle: {
+    make: string;
+    model: string;
+    license_plate: string | null;
+  }) {
+    const plate = vehicle.license_plate?.trim() || 'No plate';
+    const makeModel = `${vehicle.make} ${vehicle.model}`.trim();
+    return makeModel ? `${plate} · ${makeModel}` : plate;
+  }
+
+  private buildCustomerName(customer: {
+    first_name: string | null;
+    last_name: string | null;
+  }) {
+    const fullName = `${customer.first_name?.trim() ?? ''} ${
+      customer.last_name?.trim() ?? ''
+    }`.trim();
+    return fullName.length > 0 ? fullName : null;
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private async recordAudit(input: {

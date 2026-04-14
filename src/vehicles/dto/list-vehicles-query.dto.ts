@@ -43,7 +43,7 @@ function transformNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : value;
 }
 
-export class ListCustomersQueryDto {
+export class ListVehiclesQueryDto {
   @IsOptional()
   @Transform(({ value }) => normalizeSearchValue(value))
   @IsString()

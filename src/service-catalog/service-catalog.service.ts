@@ -15,6 +15,7 @@ import { Tag, TagDocument } from '../tags/schemas/tag.schema';
 import { serializeEmbeddedTags } from '../tags/tag-serialization';
 import { prepareEmbeddedTags } from '../tags/tag-write';
 import { CreateServiceDto } from './dto/create-service.dto';
+import { ListServicesQueryDto } from './dto/list-services-query.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import {
   ServiceCatalog,
@@ -501,12 +502,40 @@ export class ServiceCatalogService implements OnModuleInit {
     return this.serializeService(service);
   }
 
-  async findAll() {
+  async findAll(query: ListServicesQueryDto = {}) {
     const services = await this.serviceModel
-      .find()
+      .find(this.buildSearchQuery(query.search))
       .sort({ is_active: -1, name: 1 })
       .exec();
     return this.serializeServices(services);
+  }
+
+  async findPage(query: ListServicesQueryDto = {}) {
+    const searchQuery = this.buildSearchQuery(query.search);
+    const page = query.page ?? 1;
+    const pageSize = query.page_size ?? 25;
+    const skip = (page - 1) * pageSize;
+
+    const [services, total] = await Promise.all([
+      this.serviceModel
+        .find(searchQuery)
+        .sort({ is_active: -1, name: 1 })
+        .skip(skip)
+        .limit(pageSize)
+        .exec(),
+      this.serviceModel.countDocuments(searchQuery).exec(),
+    ]);
+
+    const pageCount = total === 0 ? 1 : Math.ceil(total / pageSize);
+    const currentPage = Math.min(page, pageCount);
+
+    return {
+      items: await this.serializeServices(services),
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      page_count: pageCount,
+    };
   }
 
   async findById(id: string) {
@@ -697,5 +726,22 @@ export class ServiceCatalogService implements OnModuleInit {
       parts_total: totals.parts_total,
       total: totals.total,
     };
+  }
+
+  private buildSearchQuery(search?: string) {
+    if (!search) {
+      return {};
+    }
+
+    return {
+      name: {
+        $regex: this.escapeRegex(search.trim()),
+        $options: 'i',
+      },
+    };
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

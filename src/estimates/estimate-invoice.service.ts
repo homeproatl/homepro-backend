@@ -168,6 +168,13 @@ type EstimateInvoiceListSummary = {
   invoice_needs_refresh: boolean;
 };
 
+type EstimateBillingSummaryListInput = {
+  estimate_id: string;
+  customer_id: string;
+  total: number;
+  services_count: number;
+};
+
 type InvoiceBillingReadiness = {
   pdfBlockers: string[];
   sendBlockers: string[];
@@ -285,6 +292,118 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       invoice_needs_refresh:
         latestSnapshot?.status === EstimateInvoiceSnapshotStatus.STALE,
     };
+  }
+
+  async getEstimateBillingSummariesForList(
+    estimates: EstimateBillingSummaryListInput[],
+  ): Promise<Map<string, EstimateInvoiceListSummary>> {
+    if (estimates.length === 0) {
+      return new Map();
+    }
+
+    const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
+    const estimateObjectIds = estimates.map((estimate) =>
+      asObjectId(estimate.estimate_id, 'estimate id'),
+    );
+    const customerObjectIds = Array.from(
+      new Set(estimates.map((estimate) => estimate.customer_id)),
+    ).map((customerId) => asObjectId(customerId, 'customer id'));
+
+    const [customers, latestSnapshots] = await Promise.all([
+      this.customerModel
+        .find({ _id: { $in: customerObjectIds } })
+        .select({ email: 1 })
+        .lean()
+        .exec(),
+      this.estimateInvoiceSnapshotModel
+        .aggregate<{
+          _id: unknown;
+          latestSnapshot: {
+            invoice_number: string;
+            status: EstimateInvoiceSnapshotStatus;
+          };
+        }>([
+          {
+            $match: {
+              estimate_id: { $in: estimateObjectIds },
+            },
+          },
+          {
+            $sort: {
+              estimate_id: 1,
+              revision_number: -1,
+              created_at: -1,
+            },
+          },
+          {
+            $group: {
+              _id: '$estimate_id',
+              latestSnapshot: { $first: '$$ROOT' },
+            },
+          },
+          {
+            $project: {
+              latestSnapshot: {
+                invoice_number: 1,
+                status: 1,
+              },
+            },
+          },
+        ])
+        .exec(),
+    ]);
+
+    const customerEmailById = new Map(
+      customers.map((customer) => [
+        String(customer._id),
+        typeof customer.email === 'string' ? customer.email : null,
+      ]),
+    );
+    const snapshotByEstimateId = new Map(
+      latestSnapshots.map((entry) => [String(entry._id), entry.latestSnapshot]),
+    );
+
+    return new Map(
+      estimates.map((estimate) => {
+        const customerEmail =
+          customerEmailById.get(estimate.customer_id) ?? null;
+        const blockers: string[] = [];
+
+        if (!customerEmail) {
+          blockers.push(
+            'Customer email is required before an invoice can be issued or sent.',
+          );
+        }
+
+        if (estimate.total <= 0 && estimate.services_count === 0) {
+          blockers.push(
+            'Add at least one billable line before issuing an invoice.',
+          );
+        }
+
+        const latestSnapshot =
+          snapshotByEstimateId.get(estimate.estimate_id) ?? null;
+        const sendReady =
+          blockers.length === 0 && runtimeReadiness.sendBlockers.length === 0;
+
+        return [
+          estimate.estimate_id,
+          {
+            invoice_status: latestSnapshot?.status ?? null,
+            latest_invoice_number: latestSnapshot?.invoice_number ?? null,
+            invoice_ready: blockers.length === 0,
+            send_ready: sendReady,
+            invoice_needs_refresh:
+              latestSnapshot?.status === EstimateInvoiceSnapshotStatus.STALE,
+          },
+        ] as const;
+      }),
+    );
+  }
+
+  async isInvoiceSendRuntimeReady() {
+    const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
+    return runtimeReadiness.sendBlockers.length === 0;
   }
 
   async getInvoiceHistory(estimateId: string) {

@@ -29,6 +29,9 @@ export class CustomersController {
 
   @Get()
   findAll(@Query() query: ListCustomersQueryDto) {
+    if (query.paginated) {
+      return this.customersService.findPage(query);
+    }
     return this.customersService.findAll(query);
   }
 

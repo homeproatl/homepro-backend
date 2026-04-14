@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, PipelineStage } from 'mongoose';
 import {
   AuditLog,
   AuditLogDocument,
@@ -16,6 +16,7 @@ import {
 import { asObjectId } from '../common/utils/object-id';
 import { Estimate, EstimateDocument } from '../estimates/schemas/estimate.schema';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { Vehicle, VehicleDocument } from './schemas/vehicle.schema';
 
@@ -74,13 +75,29 @@ export class VehiclesService {
     }
   }
 
-  async findAll() {
-    const vehicles = await this.vehicleModel
-      .find()
-      .sort({ is_archived: 1, created_at: -1 })
-      .exec();
+  async findAll(query: ListVehiclesQueryDto = {}) {
+    const vehicles = await this.findVehicleList(query);
+    return vehicles;
+  }
 
-    return vehicles.map((vehicle) => this.toVehicleContract(vehicle));
+  async findPage(query: ListVehiclesQueryDto = {}) {
+    const page = query.page ?? 1;
+    const pageSize = query.page_size ?? 25;
+    const skip = (page - 1) * pageSize;
+    const { items, total } = await this.findPaginatedVehicleList(query, {
+      skip,
+      limit: pageSize,
+    });
+    const pageCount = total === 0 ? 1 : Math.ceil(total / pageSize);
+    const currentPage = Math.min(page, pageCount);
+
+    return {
+      items,
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      page_count: pageCount,
+    };
   }
 
   async findById(id: string) {
@@ -281,8 +298,180 @@ export class VehiclesService {
     };
   }
 
+  private async findVehicleList(
+    query: ListVehiclesQueryDto,
+    options?: { skip?: number; limit?: number },
+  ) {
+    const pipeline = this.buildVehicleListPipeline(query, options);
+    const result = await this.vehicleModel.aggregate(pipeline).exec();
+
+    return (result as Array<Record<string, unknown>>).map((vehicle) =>
+      this.normalizeVehicleListItem(vehicle),
+    );
+  }
+
+  private async findPaginatedVehicleList(
+    query: ListVehiclesQueryDto,
+    options: { skip?: number; limit?: number },
+  ) {
+    const pipeline = this.buildVehicleFacetPipeline(query, options);
+    const result = await this.vehicleModel.aggregate(pipeline).exec();
+    const first = (result[0] ?? {}) as {
+      items?: Array<Record<string, unknown>>;
+      metadata?: Array<{ total?: number }>;
+    };
+    const items = Array.isArray(first.items)
+      ? first.items.map((vehicle) => this.normalizeVehicleListItem(vehicle))
+      : [];
+    const total = Array.isArray(first.metadata)
+      ? (first.metadata[0]?.total ?? 0)
+      : 0;
+
+    return { items, total };
+  }
+
+  private buildVehicleListPipeline(
+    query: ListVehiclesQueryDto,
+    options?: { skip?: number; limit?: number },
+  ): PipelineStage[] {
+    const pipeline: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'customers',
+          localField: 'customer_id',
+          foreignField: '_id',
+          as: 'customer',
+        },
+      },
+      {
+        $unwind: {
+          path: '$customer',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ];
+
+    const trimmedSearch = query.search?.trim();
+    if (trimmedSearch) {
+      const searchRegex = new RegExp(this.escapeRegex(trimmedSearch), 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { make: searchRegex },
+            { model: searchRegex },
+            { sub_model: searchRegex },
+            { vin: searchRegex },
+            { license_plate: searchRegex },
+            { 'customer.first_name': searchRegex },
+            { 'customer.last_name': searchRegex },
+          ],
+        },
+      });
+    }
+
+    pipeline.push(
+      { $sort: { is_archived: 1, created_at: -1 } },
+      {
+        $project: {
+          _id: 1,
+          customer_id: 1,
+          is_archived: 1,
+          is_incomplete: 1,
+          color: 1,
+          year: 1,
+          make: 1,
+          model: 1,
+          sub_model: 1,
+          mileage: 1,
+          vin: 1,
+          license_plate: 1,
+          created_at: 1,
+          updated_at: 1,
+          customer_name: {
+            $trim: {
+              input: {
+                $concat: [
+                  { $ifNull: ['$customer.first_name', ''] },
+                  ' ',
+                  { $ifNull: ['$customer.last_name', ''] },
+                ],
+              },
+            },
+          },
+        },
+      },
+    );
+
+    if (options?.skip) {
+      pipeline.push({ $skip: options.skip });
+    }
+    if (options?.limit) {
+      pipeline.push({ $limit: options.limit });
+    }
+
+    return pipeline;
+  }
+
+  private buildVehicleFacetPipeline(
+    query: ListVehiclesQueryDto,
+    options?: { skip?: number; limit?: number },
+  ): PipelineStage[] {
+    const pipeline = this.buildVehicleListPipeline(query);
+    const itemsPipeline = [
+      ...(options?.skip ? [{ $skip: options.skip }] : []),
+      ...(options?.limit ? [{ $limit: options.limit }] : []),
+    ] as unknown as PipelineStage.FacetPipelineStage[];
+    pipeline.push({
+      $facet: {
+        items: itemsPipeline,
+        metadata: [{ $count: 'total' }],
+      },
+    });
+    return pipeline;
+  }
+
+  private normalizeVehicleListItem(raw: Record<string, unknown>) {
+    const vin = typeof raw.vin === 'string' && raw.vin.length > 0 ? raw.vin : null;
+    const licensePlate =
+      typeof raw.license_plate === 'string' && raw.license_plate.length > 0
+        ? raw.license_plate
+        : null;
+    const customerName =
+      typeof raw.customer_name === 'string' && raw.customer_name.trim().length > 0
+        ? raw.customer_name.trim()
+        : null;
+
+    return {
+      id: String(raw._id),
+      customer_id: String(raw.customer_id),
+      is_archived: raw.is_archived === true,
+      is_incomplete:
+        raw.is_incomplete === true ||
+        this.isVehicleIncomplete(vin, licensePlate),
+      color: typeof raw.color === 'string' ? raw.color : null,
+      year: typeof raw.year === 'number' ? raw.year : null,
+      make: typeof raw.make === 'string' ? raw.make : '',
+      model: typeof raw.model === 'string' ? raw.model : '',
+      sub_model: typeof raw.sub_model === 'string' ? raw.sub_model : null,
+      mileage: typeof raw.mileage === 'number' ? raw.mileage : null,
+      vin,
+      license_plate: licensePlate,
+      customer_name: customerName,
+      created_at: this.toIsoString(
+        raw.created_at instanceof Date ? raw.created_at : undefined,
+      ),
+      updated_at: this.toIsoString(
+        raw.updated_at instanceof Date ? raw.updated_at : undefined,
+      ),
+    };
+  }
+
   private toIsoString(value?: Date) {
     return value?.toISOString();
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private normalizeVehicleIdentifier(value?: string | null) {

@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
-import { ConflictException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { getModelToken } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
@@ -18,12 +17,12 @@ import { EstimateStatus } from '../src/common/enums/estimate-status.enum';
 import { PaidStatus } from '../src/common/enums/paid-status.enum';
 import { PaymentType } from '../src/common/enums/payment-type.enum';
 import { UserRole } from '../src/common/enums/user-role.enum';
-import { ServiceCatalogService } from '../src/service-catalog/service-catalog.service';
 import { User, UserDocument } from '../src/users/schemas/user.schema';
 import {
   Vehicle,
   VehicleDocument,
 } from '../src/vehicles/schemas/vehicle.schema';
+import { parseRawShopmonkeyPaste } from './parse-shopmonkey-raw-paste';
 
 type ShopmonkeyCustomerInput = {
   first_name: string;
@@ -121,7 +120,6 @@ type ImportContext = {
   customerModel: Model<CustomerDocument>;
   vehicleModel: Model<VehicleDocument>;
   estimateModel: Model<EstimateDocument>;
-  serviceCatalogService: ServiceCatalogService;
   estimatesService: EstimatesService;
 };
 
@@ -144,6 +142,17 @@ const TAG_COLORS = [
   'blue',
   'violet',
 ] as const;
+
+function normalizeDocumentKind(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? null;
+}
+
+function resolveImportPaymentStatus(input: ShopmonkeyPasteImportInput) {
+  if (normalizeDocumentKind(input.document_kind) === 'estimate') {
+    return PaidStatus.UNPAID;
+  }
+  return input.payment_status;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -428,19 +437,28 @@ function parseInput(raw: string): ShopmonkeyPasteImportInput[] {
     );
   }
 
-  const parsed: unknown = JSON.parse(raw);
-  const records = Array.isArray(parsed)
-    ? parsed
-    : isRecord(parsed) && Array.isArray(parsed.estimates)
-      ? parsed.estimates
-      : [parsed];
+  let inputs: ShopmonkeyPasteImportInput[];
 
-  const inputs = records.map((record, index) => {
-    if (!isRecord(record)) {
-      throw new Error(`estimates[${index}] must be a JSON object.`);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const records = Array.isArray(parsed)
+      ? parsed
+      : isRecord(parsed) && Array.isArray(parsed.estimates)
+        ? parsed.estimates
+        : [parsed];
+
+    inputs = records.map((record, index) => {
+      if (!isRecord(record)) {
+        throw new Error(`estimates[${index}] must be a JSON object.`);
+      }
+      return parseOneInput(record, `estimates[${index}]`);
+    });
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
     }
-    return parseOneInput(record, `estimates[${index}]`);
-  });
+    inputs = parseRawShopmonkeyPaste(raw);
+  }
 
   validateBatchSourceKeys(inputs);
   return inputs;
@@ -744,6 +762,20 @@ function normalizeCustomerName(value: string) {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+// Some Shopmonkey records reuse a shop-managed email across many unrelated
+// customers, so we should never use those addresses for identity resolution.
+const SHARED_CUSTOMER_EMAILS = new Set([
+  'gmb.auto@yahoo.com',
+]);
+
+function normalizeCustomerEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isSharedCustomerEmail(value: string) {
+  return SHARED_CUSTOMER_EMAILS.has(normalizeCustomerEmail(value));
+}
+
 function pickExistingCustomerCandidate(
   candidates: CustomerDocument[],
   input: ShopmonkeyCustomerInput,
@@ -766,16 +798,6 @@ function pickExistingCustomerCandidate(
     }
   }
 
-  if (input.email) {
-    const normalizedEmail = input.email.trim().toLowerCase();
-    const emailMatches = candidates.filter(
-      (candidate) => candidate.email?.trim().toLowerCase() === normalizedEmail,
-    );
-    if (emailMatches.length === 1) {
-      return emailMatches[0];
-    }
-  }
-
   const normalizedFirstName = normalizeCustomerName(input.first_name);
   const normalizedLastName = normalizeCustomerName(input.last_name);
   const nameMatches = candidates.filter(
@@ -787,8 +809,21 @@ function pickExistingCustomerCandidate(
     return nameMatches[0];
   }
 
+  if (input.email && !isSharedCustomerEmail(input.email)) {
+    const normalizedEmail = normalizeCustomerEmail(input.email);
+    const emailMatches = candidates.filter((candidate) => {
+      if (!candidate.email) {
+        return false;
+      }
+      return normalizeCustomerEmail(candidate.email) === normalizedEmail;
+    });
+    if (emailMatches.length === 1) {
+      return emailMatches[0];
+    }
+  }
+
   throw new Error(
-    `Customer phone ${normalizePhone(input.phone)} matched ${candidates.length} customers and could not be disambiguated by vehicle, email, or exact name.`,
+    `Customer phone ${normalizePhone(input.phone)} matched ${candidates.length} customers and could not be disambiguated by vehicle, exact name, or trusted email.`,
   );
 }
 
@@ -962,46 +997,6 @@ async function resolveVehicle(
   return { document: created, action: 'created' as const };
 }
 
-async function resolveCannedService(
-  serviceCatalogService: ServiceCatalogService,
-  service: ShopmonkeyServiceInput,
-) {
-  try {
-    const created = await serviceCatalogService.create({
-      name: service.canned_service_name,
-      note: service.note ?? null,
-      labor_lines: service.labor_lines.map((line) => ({
-        description: line.description,
-        hours: line.hours,
-        rate: line.rate,
-        discount_percent: line.discount_percent ?? 0,
-        tags: line.tags ?? [],
-      })),
-      part_lines: service.part_lines.map((line) => ({
-        name: line.name,
-        part_number: line.part_number ?? null,
-        quantity: line.quantity,
-        cost: line.cost ?? null,
-        price: line.price,
-        discount_percent: line.discount_percent ?? 0,
-        tags: line.tags ?? [],
-      })),
-    });
-    return { service: created, action: 'created' as const };
-  } catch (error) {
-    const duplicateId = (
-      error as { response?: { duplicate_service?: { id?: string } } }
-    ).response?.duplicate_service?.id;
-
-    if (error instanceof ConflictException && duplicateId) {
-      const matched = await serviceCatalogService.findById(duplicateId);
-      return { service: matched, action: 'linked_existing' as const };
-    }
-
-    throw error;
-  }
-}
-
 function buildPartLinesWithFee(
   service: ShopmonkeyServiceInput,
   financials: ServiceFinancials,
@@ -1091,30 +1086,18 @@ async function importShopmonkeyPaste(
       existingVehicle,
     );
 
-  const cannedServices: Array<{ id: string; name: string; action: string }> =
-    [];
   const estimateServices = [];
   let didCreateEstimate = false;
 
   try {
     for (const [serviceIndex, service] of input.services.entries()) {
-      const cannedServiceResult = await resolveCannedService(
-        context.serviceCatalogService,
-        service,
-      );
-      cannedServices.push({
-        id: cannedServiceResult.service.id,
-        name: cannedServiceResult.service.name,
-        action: cannedServiceResult.action,
-      });
-
       const partLines = buildPartLinesWithFee(
         service,
         financials.serviceFinancials[serviceIndex],
       );
 
       estimateServices.push({
-        canned_service_id: cannedServiceResult.service.id,
+        canned_service_id: null,
         name: service.estimate_service_name ?? service.canned_service_name,
         note: service.note ?? null,
         labor_lines: service.labor_lines.map((line, lineIndex) => ({
@@ -1139,7 +1122,7 @@ async function importShopmonkeyPaste(
       scheduled_end: scheduleWindow.scheduled_end,
       assigned_user_id: assignedUser ? String(assignedUser._id) : undefined,
       complaint_or_request: input.customer_comments ?? undefined,
-      payment_status: input.payment_status,
+      payment_status: resolveImportPaymentStatus(input),
       payment_type: input.payment_type,
       source_metadata: buildSourceMetadata(input),
       services: estimateServices,
@@ -1174,33 +1157,14 @@ async function importShopmonkeyPaste(
       total: finalEstimate.total,
       labor_total: finalEstimate.labor_total,
       parts_total: finalEstimate.parts_total,
-      canned_services: cannedServices,
       imported_fee_total: financials.importedFeeTotal,
     };
   } catch (error) {
     if (!didCreateEstimate) {
-      await cleanupCreatedCannedServices(context, cannedServices);
       await cleanupCreatedVehicle(context.vehicleModel, vehicleResult);
       await cleanupCreatedCustomer(context.customerModel, customerResult);
     }
     throw error;
-  }
-}
-
-async function cleanupCreatedCannedServices(
-  context: ImportContext,
-  cannedServices: Array<{ id: string; action: string }>,
-) {
-  const createdServices = cannedServices.filter(
-    (service) => service.action === 'created',
-  );
-
-  for (const service of createdServices.reverse()) {
-    try {
-      await context.serviceCatalogService.remove(service.id);
-    } catch {
-      await context.serviceCatalogService.deactivate(service.id);
-    }
   }
 }
 
@@ -1249,7 +1213,6 @@ async function main() {
       estimateModel: app.get<Model<EstimateDocument>>(
         getModelToken(Estimate.name),
       ),
-      serviceCatalogService: app.get(ServiceCatalogService),
       estimatesService: app.get(EstimatesService),
     };
     const results = [];
