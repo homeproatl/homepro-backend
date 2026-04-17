@@ -155,6 +155,43 @@ export const EstimateSourceMetadataSchema = SchemaFactory.createForClass(
   EstimateSourceMetadata,
 );
 
+@Schema({ _id: true, id: false })
+export class EstimatePaymentEvent {
+  _id?: Types.ObjectId;
+
+  @Prop({ required: true, default: 0 })
+  amount_delta!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  amount_paid_total!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  amount_remaining_total!: number;
+
+  @Prop({
+    type: String,
+    required: true,
+    enum: PaidStatus,
+    default: PaidStatus.UNPAID,
+  })
+  payment_status!: PaidStatus;
+
+  @Prop({ required: true, default: Date.now })
+  recorded_at!: Date;
+
+  @Prop({ type: String, trim: true, default: 'STATUS_UPDATE' })
+  source!: string;
+
+  @Prop({ type: Types.ObjectId, ref: User.name, default: null })
+  actor_user_id!: Types.ObjectId | null;
+
+  @Prop({ type: String, trim: true, default: null })
+  note!: string | null;
+}
+
+export const EstimatePaymentEventSchema =
+  SchemaFactory.createForClass(EstimatePaymentEvent);
+
 @Schema({
   collection: 'estimates',
   timestamps: {
@@ -246,6 +283,12 @@ export class Estimate {
 
   @Prop({ type: Number, required: true, default: 0 })
   total!: number;
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  amount_paid!: number;
+
+  @Prop({ type: [EstimatePaymentEventSchema], default: [] })
+  payment_events!: EstimatePaymentEvent[];
 }
 
 export const EstimateSchema = SchemaFactory.createForClass(Estimate);

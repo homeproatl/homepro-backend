@@ -9,6 +9,23 @@ import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot
 import { EstimatesService } from './estimates.service';
 
 describe('EstimatesService', () => {
+  function createListEstimateModel(records: Array<Record<string, unknown>>) {
+    const aggregateExec = jest.fn().mockResolvedValue(records);
+    const aggregate = jest.fn().mockReturnValue({ exec: aggregateExec });
+    const collectionFind = jest.fn().mockReturnValue({
+      toArray: jest.fn().mockResolvedValue([]),
+    });
+
+    return {
+      aggregate,
+      db: {
+        collection: jest.fn().mockReturnValue({
+          find: collectionFind,
+        }),
+      },
+    };
+  }
+
   function createService(overrides?: {
     estimateModel?: object;
     auditLogModel?: object;
@@ -23,7 +40,7 @@ describe('EstimatesService', () => {
       (overrides?.estimateDomainService ?? {
         canTransitionStatus: jest.fn().mockReturnValue(true),
       }) as never,
-      (overrides?.estimateInvoiceService ?? {
+      ({
         getEstimateBillingSummary: jest.fn().mockResolvedValue({
           invoice_status: null,
           latest_invoice_number: null,
@@ -31,12 +48,16 @@ describe('EstimatesService', () => {
           send_ready: true,
           invoice_needs_refresh: false,
         }),
+        getEstimateBillingSummariesForList: jest
+          .fn()
+          .mockResolvedValue(new Map()),
         getInvoiceHistoryCounts: jest.fn().mockResolvedValue({
           snapshotCount: 0,
           dispatchCount: 0,
         }),
         deleteInvoiceHistoryForEstimate: jest.fn().mockResolvedValue(undefined),
         markLatestSnapshotStaleIfNeeded: jest.fn().mockResolvedValue(undefined),
+        ...(overrides?.estimateInvoiceService ?? {}),
       }) as never,
     );
   }
@@ -44,6 +65,7 @@ describe('EstimatesService', () => {
   it('always creates new estimates in scheduled status', async () => {
     const createEstimate = jest.fn().mockResolvedValue({
       _id: 'estimate-1',
+      save: jest.fn().mockResolvedValue(undefined),
       toObject: () => ({
         _id: 'estimate-1',
         customer_id: 'customer-1',
@@ -85,26 +107,43 @@ describe('EstimatesService', () => {
   });
 
   it('filters estimates list by customer and vehicle ids when provided', async () => {
-    const exec = jest.fn().mockResolvedValue([
+    const estimateModel = createListEstimateModel([
       {
         _id: 'estimate-1',
-        toObject: () => ({
-          _id: 'estimate-1',
-          customer_id: '507f1f77bcf86cd799439011',
-          vehicle_id: '507f1f77bcf86cd799439012',
-          payment_status: PaidStatus.UNPAID,
-          due_date: null,
-          labor_total: 100,
-          parts_total: 50,
-          total: 150,
-        }),
+        estimate_number: 'EST-001',
+        title: 'Brake Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        estimate_status: EstimateStatus.SCHEDULED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 100,
+        parts_total: 50,
+        total: 150,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
     ]);
-    const sort = jest.fn().mockReturnValue({ exec });
-    const find = jest.fn().mockReturnValue({ sort });
+    const getEstimateBillingSummariesForList = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'estimate-1',
+          {
+            invoice_status: null,
+            latest_invoice_number: null,
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          },
+        ],
+      ]),
+    );
 
     const service = createService({
-      estimateModel: { find },
+      estimateModel,
+      estimateInvoiceService: { getEstimateBillingSummariesForList },
     });
 
     const result = await service.findAll({
@@ -112,15 +151,18 @@ describe('EstimatesService', () => {
       vehicle_id: '507f1f77bcf86cd799439012',
     });
 
-    const [query] = find.mock.calls[0] as [
-      {
-        customer_id: { toString: () => string };
-        vehicle_id: { toString: () => string };
-      },
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<{
+        $match?: {
+          customer_id?: { toString: () => string };
+          vehicle_id?: { toString: () => string };
+        };
+      }>,
     ];
+    const query = pipeline[0]?.$match;
 
-    expect(query.customer_id.toString()).toBe('507f1f77bcf86cd799439011');
-    expect(query.vehicle_id.toString()).toBe('507f1f77bcf86cd799439012');
+    expect(query?.customer_id?.toString()).toBe('507f1f77bcf86cd799439011');
+    expect(query?.vehicle_id?.toString()).toBe('507f1f77bcf86cd799439012');
     expect(result[0]).toMatchObject({
       id: 'estimate-1',
       customer_id: '507f1f77bcf86cd799439011',
@@ -133,34 +175,44 @@ describe('EstimatesService', () => {
   });
 
   it('returns backend-derived admin invoice workflow labels on estimate rows', async () => {
-    const exec = jest.fn().mockResolvedValue([
+    const estimateModel = createListEstimateModel([
       {
         _id: 'estimate-1',
-        toObject: () => ({
-          _id: 'estimate-1',
-          customer_id: 'customer-1',
-          vehicle_id: 'vehicle-1',
-          payment_status: PaidStatus.UNPAID,
-          due_date: null,
-          labor_total: 0,
-          parts_total: 0,
-          total: 0,
-        }),
+        estimate_number: 'EST-001',
+        title: 'Invoice Ready Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        estimate_status: EstimateStatus.SCHEDULED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
     ]);
-    const sort = jest.fn().mockReturnValue({ exec });
-    const find = jest.fn().mockReturnValue({ sort });
+    const getEstimateBillingSummariesForList = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'estimate-1',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
+            latest_invoice_number: 'INV-777',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          },
+        ],
+      ]),
+    );
 
     const service = createService({
-      estimateModel: { find },
+      estimateModel,
       estimateInvoiceService: {
-        getEstimateBillingSummary: jest.fn().mockResolvedValue({
-          invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
-          latest_invoice_number: 'INV-777',
-          invoice_ready: true,
-          send_ready: true,
-          invoice_needs_refresh: false,
-        }),
+        getEstimateBillingSummariesForList,
       },
     });
 
@@ -168,69 +220,76 @@ describe('EstimatesService', () => {
       {
         admin_invoice_workflow_state: 'ready_to_send',
         admin_invoice_workflow_title: 'Ready to Send',
-        admin_invoice_workflow_detail: 'INV-777',
+        admin_invoice_workflow_detail: 'Last invoice: INV-777',
       },
     ]);
   });
 
   it('builds dashboard summary metrics on the backend', async () => {
-    const exec = jest.fn().mockResolvedValue([
+    const estimateModel = createListEstimateModel([
       {
         _id: 'estimate-ready',
-        toObject: () => ({
-          _id: 'estimate-ready',
-          customer_id: 'customer-1',
-          vehicle_id: 'vehicle-1',
-          payment_status: PaidStatus.UNPAID,
-          estimate_status: EstimateStatus.SCHEDULED,
-          due_date: null,
-          labor_total: 100,
-          parts_total: 0,
-          total: 100,
-        }),
+        estimate_number: 'EST-READY',
+        title: 'Ready Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.SCHEDULED,
+        due_date: null,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
       {
         _id: 'estimate-overdue',
-        toObject: () => ({
-          _id: 'estimate-overdue',
-          customer_id: 'customer-2',
-          vehicle_id: 'vehicle-2',
-          payment_status: PaidStatus.UNPAID,
-          estimate_status: EstimateStatus.COMPLETED,
-          due_date: new Date(Date.now() - 60_000).toISOString(),
-          labor_total: 0,
-          parts_total: 50,
-          total: 50,
-        }),
+        estimate_number: 'EST-OVERDUE',
+        title: 'Overdue Estimate',
+        customer_id: '507f1f77bcf86cd799439013',
+        vehicle_id: '507f1f77bcf86cd799439014',
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.COMPLETED,
+        due_date: new Date(Date.now() - 60_000).toISOString(),
+        labor_total: 0,
+        parts_total: 50,
+        total: 50,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
     ]);
-    const sort = jest.fn().mockReturnValue({ exec });
-    const find = jest.fn().mockReturnValue({ sort });
-    const getEstimateBillingSummary = jest
-      .fn()
-      .mockImplementation((estimateId: string) => {
-      if (estimateId === 'estimate-ready') {
-        return {
-          invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
-          latest_invoice_number: 'INV-READY',
-          invoice_ready: true,
-          send_ready: true,
-          invoice_needs_refresh: false,
-        };
-      }
-
-      return {
-        invoice_status: EstimateInvoiceSnapshotStatus.STALE,
-        latest_invoice_number: 'INV-STALE',
-        invoice_ready: true,
-        send_ready: true,
-        invoice_needs_refresh: true,
-      };
-    });
+    const getEstimateBillingSummariesForList = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'estimate-ready',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
+            latest_invoice_number: 'INV-READY',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          },
+        ],
+        [
+          'estimate-overdue',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.STALE,
+            latest_invoice_number: 'INV-STALE',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: true,
+          },
+        ],
+      ]),
+    );
 
     const service = createService({
-      estimateModel: { find },
-      estimateInvoiceService: { getEstimateBillingSummary },
+      estimateModel,
+      estimateInvoiceService: { getEstimateBillingSummariesForList },
     });
 
     await expect(service.getDashboardSummary()).resolves.toMatchObject({
@@ -431,6 +490,7 @@ describe('EstimatesService', () => {
         created_at: new Date('2026-04-03T08:00:00.000Z'),
         updated_at: new Date('2026-04-03T08:30:00.000Z'),
       }),
+      save: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = createService({
@@ -478,5 +538,198 @@ describe('EstimatesService', () => {
         'LABOR',
       ),
     ).toThrow(InternalServerErrorException);
+  });
+
+  it('requires payment_amount when setting PART_PAID', async () => {
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      payment_status: PaidStatus.UNPAID,
+      amount_paid: 0,
+      total: 200,
+      toObject: jest.fn().mockReturnValue({
+        _id: '507f1f77bcf86cd799439011',
+      }),
+    };
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+    });
+
+    await expect(
+      service.updatePaymentStatus('507f1f77bcf86cd799439011', {
+        payment_status: PaidStatus.PART_PAID,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('stores PART_PAID payment_amount as paid-to-date amount', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      payment_status: PaidStatus.UNPAID,
+      amount_paid: 0,
+      total: 200,
+      toObject: jest.fn().mockImplementation(() => ({
+        _id: '507f1f77bcf86cd799439011',
+        estimate_number: 'EST-110',
+        title: 'Payment Update',
+        customer_id: '507f1f77bcf86cd799439012',
+        vehicle_id: '507f1f77bcf86cd799439013',
+        payment_status: estimate.payment_status,
+        amount_paid: estimate.amount_paid,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        estimate_status: EstimateStatus.SCHEDULED,
+        services: [],
+        labor_total: 0,
+        parts_total: 0,
+        total: estimate.total,
+      })),
+      save,
+    };
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+    });
+
+    await service.updatePaymentStatus('507f1f77bcf86cd799439011', {
+      payment_status: PaidStatus.PART_PAID,
+      payment_amount: 75,
+    });
+
+    expect(estimate.payment_status).toBe(PaidStatus.PART_PAID);
+    expect(estimate.amount_paid).toBe(75);
+  });
+
+  it('updates PART_PAID paid-to-date when prior payment events already exist', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      payment_status: PaidStatus.PART_PAID,
+      amount_paid: 100,
+      total: 500,
+      payment_events: [
+        {
+          amount_delta: 100,
+          amount_paid_total: 100,
+          amount_remaining_total: 400,
+          payment_status: PaidStatus.PART_PAID,
+          recorded_at: new Date('2026-04-17T10:00:00.000Z'),
+          source: 'STATUS_UPDATE',
+          actor_user_id: null,
+          note: 'Partial payment recorded',
+        },
+      ],
+      toObject: jest.fn().mockImplementation(() => ({
+        _id: '507f1f77bcf86cd799439011',
+        estimate_number: 'EST-111',
+        title: 'Payment Update Existing Ledger',
+        customer_id: '507f1f77bcf86cd799439012',
+        vehicle_id: '507f1f77bcf86cd799439013',
+        payment_status: estimate.payment_status,
+        amount_paid: estimate.amount_paid,
+        payment_events: estimate.payment_events,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        estimate_status: EstimateStatus.SCHEDULED,
+        services: [],
+        labor_total: 0,
+        parts_total: 0,
+        total: estimate.total,
+      })),
+      save,
+    };
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+    });
+
+    await service.updatePaymentStatus('507f1f77bcf86cd799439011', {
+      payment_status: PaidStatus.PART_PAID,
+      payment_amount: 400,
+    });
+
+    expect(estimate.payment_status).toBe(PaidStatus.PART_PAID);
+    expect(estimate.amount_paid).toBe(400);
+    expect(estimate.payment_events).toHaveLength(2);
+    expect(estimate.payment_events[1].amount_delta).toBe(300);
+    expect(estimate.payment_events[1].amount_paid_total).toBe(400);
+    expect(estimate.payment_events[1].amount_remaining_total).toBe(100);
+  });
+
+  it('preserves legacy PART_PAID status when amount_paid is missing during estimate updates', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    const applyEstimateUpdate = jest.fn().mockResolvedValue(undefined);
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      estimate_number: 'EST-102',
+      title: 'Legacy Partial Payment',
+      customer_id: '507f1f77bcf86cd799439012',
+      vehicle_id: '507f1f77bcf86cd799439013',
+      assigned_user_id: null,
+      complaint_or_request: null,
+      notes: null,
+      payment_type: 'POS_CARD',
+      due_date: null,
+      estimate_status: EstimateStatus.SCHEDULED,
+      payment_status: PaidStatus.PART_PAID,
+      amount_paid: undefined,
+      services: [],
+      labor_total: 0,
+      parts_total: 0,
+      total: 200,
+      toObject: jest.fn().mockImplementation(() => ({
+        _id: '507f1f77bcf86cd799439011',
+        estimate_number: 'EST-102',
+        title: 'Legacy Partial Payment',
+        customer_id: '507f1f77bcf86cd799439012',
+        vehicle_id: '507f1f77bcf86cd799439013',
+        assigned_user_id: null,
+        complaint_or_request: null,
+        notes: null,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        estimate_status: EstimateStatus.SCHEDULED,
+        payment_status: estimate.payment_status,
+        amount_paid: estimate.amount_paid,
+        services: [],
+        labor_total: 0,
+        parts_total: 0,
+        total: 200,
+        created_at: new Date('2026-04-03T08:00:00.000Z'),
+        updated_at: new Date('2026-04-03T08:30:00.000Z'),
+      })),
+      save,
+    };
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+      estimateDataService: {
+        applyEstimateUpdate,
+      },
+    });
+
+    await service.update('507f1f77bcf86cd799439011', {
+      title: 'Legacy Partial Payment Updated',
+    });
+
+    expect(estimate.payment_status).toBe(PaidStatus.PART_PAID);
+    expect(estimate.amount_paid).toBe(0);
   });
 });

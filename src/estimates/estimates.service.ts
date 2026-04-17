@@ -47,12 +47,25 @@ type EstimateWorkflowSummary = {
   admin_invoice_workflow_detail: string;
 };
 
+type EstimatePaymentEventRecord = {
+  _id?: unknown;
+  amount_delta?: number;
+  amount_paid_total?: number;
+  amount_remaining_total?: number;
+  payment_status?: PaidStatus;
+  recorded_at?: Date | string | null;
+  source?: string | null;
+  actor_user_id?: unknown;
+  note?: string | null;
+};
+
 // Dashboard rows are built from already-serialized estimate contracts.
 type DashboardSummaryEstimate = {
   id: string;
   estimate_status?: EstimateStatus;
   payment_status?: PaidStatus;
   total?: number;
+  amount_paid?: number;
   due_date?: string | Date | null;
   is_overdue: boolean;
   admin_invoice_workflow_state: AdminInvoiceWorkflowState;
@@ -72,6 +85,8 @@ type EstimateListRecord = {
   estimate_status?: EstimateStatus;
   payment_status?: PaidStatus;
   payment_type?: PaymentType;
+  amount_paid?: number;
+  payment_events?: EstimatePaymentEventRecord[];
   due_date?: Date | string | null;
   labor_total?: number;
   parts_total?: number;
@@ -138,6 +153,11 @@ export class EstimatesService {
       source_metadata: payload.source_metadata ?? null,
       services: payload.services,
     });
+
+    created.amount_paid =
+      created.payment_status === PaidStatus.PAID ? created.total : 0;
+    this.syncPaymentState(created);
+    await created.save();
 
     await this.recordAudit({
       actorUserId,
@@ -228,8 +248,15 @@ export class EstimatesService {
         overdueBilling += 1;
       }
 
+      const paymentStatus = estimate.payment_status ?? PaidStatus.UNPAID;
+      const total = typeof estimate.total === 'number' ? estimate.total : 0;
+      const amountPaid =
+        typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0;
+      const amountRemaining = Math.max(total - amountPaid, 0);
+
       if (
-        (estimate.payment_status ?? PaidStatus.UNPAID) === PaidStatus.UNPAID
+        paymentStatus === PaidStatus.UNPAID ||
+        (paymentStatus === PaidStatus.PART_PAID && amountRemaining > 0)
       ) {
         unpaidBilling += 1;
       }
@@ -420,6 +447,8 @@ export class EstimatesService {
             : null,
       services: payload.services ?? currentServices,
     });
+    this.syncPaymentState(estimate);
+    await estimate.save();
 
     await this.recordAudit({
       actorUserId,
@@ -491,7 +520,59 @@ export class EstimatesService {
     );
 
     const before = estimate.toObject();
+    const total = Math.max(estimate.total ?? 0, 0);
+
+    const previousAmountPaid = this.resolveAmountPaid(
+      estimate.amount_paid,
+      total,
+      estimate.payment_status ?? PaidStatus.UNPAID,
+      estimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+    );
+
+    if (payload.payment_status === PaidStatus.UNPAID) {
+      estimate.amount_paid = 0;
+    } else if (payload.payment_status === PaidStatus.PART_PAID) {
+      if (typeof payload.payment_amount !== 'number') {
+        throw new BadRequestException(
+          'Payment amount is required when setting PART_PAID.',
+        );
+      }
+      if (payload.payment_amount <= 0) {
+        throw new BadRequestException(
+          'Payment amount must be greater than 0 for PART_PAID.',
+        );
+      }
+      if (payload.payment_amount >= total) {
+        throw new BadRequestException(
+          'Payment amount must be less than estimate total for PART_PAID.',
+        );
+      }
+      estimate.amount_paid = payload.payment_amount;
+    } else if (payload.payment_status === PaidStatus.PAID) {
+      if (
+        typeof payload.payment_amount === 'number' &&
+        payload.payment_amount < total
+      ) {
+        throw new BadRequestException(
+          'Use PART_PAID when payment amount is less than total.',
+        );
+      }
+      estimate.amount_paid = total;
+    }
+
     estimate.payment_status = payload.payment_status;
+    this.syncPaymentState(estimate, { preferRawAmount: true });
+    this.appendPaymentEvent(estimate, {
+      previousAmountPaid,
+      actorUserId,
+      source: 'STATUS_UPDATE',
+      note:
+        payload.payment_status === PaidStatus.PART_PAID
+          ? 'Partial payment recorded'
+          : payload.payment_status === PaidStatus.PAID
+            ? 'Marked paid in full'
+            : 'Marked unpaid',
+    });
     await estimate.save();
     await this.recordAudit({
       actorUserId,
@@ -718,6 +799,132 @@ export class EstimatesService {
     }
   }
 
+  private resolveAmountPaid(
+    rawAmountPaid: number | undefined,
+    total: number,
+    paymentStatus: PaidStatus,
+    paymentEvents?: EstimatePaymentEventRecord[] | undefined,
+    options?: {
+      preferRawAmount?: boolean;
+    },
+  ) {
+    const latestEvent = this.resolveLatestPaymentEvent(paymentEvents);
+    if (
+      !options?.preferRawAmount &&
+      latestEvent &&
+      typeof latestEvent.amount_paid_total === 'number'
+    ) {
+      return Math.min(Math.max(latestEvent.amount_paid_total, 0), total);
+    }
+    const fallbackAmountPaid =
+      paymentStatus === PaidStatus.PAID ? total : 0;
+    const candidateAmountPaid =
+      typeof rawAmountPaid === 'number' ? rawAmountPaid : fallbackAmountPaid;
+    return Math.min(Math.max(candidateAmountPaid, 0), total);
+  }
+
+  private resolveLatestPaymentEvent(
+    paymentEvents: EstimatePaymentEventRecord[] | undefined,
+  ): EstimatePaymentEventRecord | null {
+    if (!Array.isArray(paymentEvents) || paymentEvents.length === 0) {
+      return null;
+    }
+    const sorted = [...paymentEvents].sort((a, b) => {
+      const aTime = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+      const bTime = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
+      return bTime - aTime;
+    });
+    return sorted[0] ?? null;
+  }
+
+  private resolveAmountRemaining(total: number, amountPaid: number) {
+    return Math.max(total - amountPaid, 0);
+  }
+
+  private syncPaymentState(
+    estimate: EstimateDocument,
+    options?: {
+      preferRawAmount?: boolean;
+    },
+  ) {
+    const total = Math.max(estimate.total ?? 0, 0);
+    const isLegacyPartPaidWithoutAmount =
+      estimate.payment_status === PaidStatus.PART_PAID &&
+      (estimate.amount_paid === undefined || estimate.amount_paid === null) &&
+      total > 0;
+    if (isLegacyPartPaidWithoutAmount) {
+      estimate.amount_paid = 0;
+      return;
+    }
+    const amountPaid = this.resolveAmountPaid(
+      estimate.amount_paid,
+      total,
+      estimate.payment_status ?? PaidStatus.UNPAID,
+      estimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+      options,
+    );
+    estimate.amount_paid = amountPaid;
+    const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
+
+    if (amountRemaining === 0 && total > 0) {
+      estimate.payment_status = PaidStatus.PAID;
+      return;
+    }
+    if (amountPaid > 0) {
+      estimate.payment_status = PaidStatus.PART_PAID;
+      return;
+    }
+    estimate.payment_status = PaidStatus.UNPAID;
+  }
+
+  private appendPaymentEvent(
+    estimate: EstimateDocument,
+    input: {
+      previousAmountPaid: number;
+      actorUserId?: string;
+      source: string;
+      note?: string;
+    },
+  ) {
+    const total = Math.max(estimate.total ?? 0, 0);
+    const currentAmountPaid = Math.min(
+      Math.max(estimate.amount_paid ?? 0, 0),
+      total,
+    );
+    const currentStatus = estimate.payment_status ?? PaidStatus.UNPAID;
+    const previousStatus = this.resolveLatestPaymentEvent(
+      estimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+    )?.payment_status;
+
+    if (
+      previousStatus === currentStatus &&
+      Math.abs(currentAmountPaid - input.previousAmountPaid) < 0.0001
+    ) {
+      return;
+    }
+
+    const amountDelta = Number(
+      (currentAmountPaid - input.previousAmountPaid).toFixed(2),
+    );
+    const event: EstimatePaymentEventRecord = {
+      amount_delta: amountDelta,
+      amount_paid_total: currentAmountPaid,
+      amount_remaining_total: Math.max(total - currentAmountPaid, 0),
+      payment_status: currentStatus,
+      recorded_at: new Date(),
+      source: input.source,
+      actor_user_id: input.actorUserId
+        ? asObjectId(input.actorUserId, 'actor user id')
+        : null,
+      note: input.note ?? null,
+    };
+
+    if (!Array.isArray(estimate.payment_events)) {
+      estimate.payment_events = [];
+    }
+    estimate.payment_events.push(event as never);
+  }
+
   private withDerivedEstimate(
     estimate: EstimateDocument | (Estimate & { _id: unknown }),
     billingSummary?: EstimateBillingSummary,
@@ -733,7 +940,16 @@ export class EstimatesService {
     const dueDate = rawEstimate.due_date
       ? new Date(rawEstimate.due_date as string | Date)
       : null;
+    const total =
+      typeof rawEstimate.total === 'number' ? rawEstimate.total : 0;
     const paymentStatus = rawEstimate.payment_status as PaidStatus;
+    const amountPaid = this.resolveAmountPaid(
+      rawEstimate.amount_paid as number | undefined,
+      total,
+      paymentStatus,
+      rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+    );
+    const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
     const isOverdue =
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
@@ -776,6 +992,11 @@ export class EstimatesService {
       estimate_status: rawEstimate.estimate_status as EstimateStatus,
       payment_status: paymentStatus,
       payment_type: rawEstimate.payment_type as PaymentType,
+      amount_paid: amountPaid,
+      amount_remaining: amountRemaining,
+      payment_events: this.serializePaymentEvents(
+        rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+      ),
       due_date: this.toIsoString(
         rawEstimate.due_date as Date | string | null | undefined,
       ),
@@ -796,7 +1017,7 @@ export class EstimatesService {
         typeof rawEstimate.parts_total === 'number'
           ? rawEstimate.parts_total
           : 0,
-      total: typeof rawEstimate.total === 'number' ? rawEstimate.total : 0,
+      total,
       created_at: this.toIsoString(
         rawEstimate.created_at as Date | string | null | undefined,
       ),
@@ -814,9 +1035,18 @@ export class EstimatesService {
     billingSummary?: EstimateBillingSummary,
   ) {
     const dueDate = rawEstimate.due_date ? new Date(rawEstimate.due_date) : null;
+    const total =
+      typeof rawEstimate.total === 'number' ? rawEstimate.total : 0;
     const paymentStatus =
       (rawEstimate.payment_status as PaidStatus | undefined) ??
       PaidStatus.UNPAID;
+    const amountPaid = this.resolveAmountPaid(
+      rawEstimate.amount_paid as number | undefined,
+      total,
+      paymentStatus,
+      rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+    );
+    const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
     const isOverdue =
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
@@ -868,6 +1098,11 @@ export class EstimatesService {
       estimate_status: rawEstimate.estimate_status as EstimateStatus,
       payment_status: paymentStatus,
       payment_type: rawEstimate.payment_type as PaymentType,
+      amount_paid: amountPaid,
+      amount_remaining: amountRemaining,
+      payment_events: this.serializePaymentEvents(
+        rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
+      ),
       due_date: this.toIsoString(
         rawEstimate.due_date as Date | string | null | undefined,
       ),
@@ -879,7 +1114,7 @@ export class EstimatesService {
         typeof rawEstimate.parts_total === 'number'
           ? rawEstimate.parts_total
           : 0,
-      total: typeof rawEstimate.total === 'number' ? rawEstimate.total : 0,
+      total,
       created_at: this.toIsoString(
         rawEstimate.created_at as Date | string | null | undefined,
       ),
@@ -890,6 +1125,46 @@ export class EstimatesService {
       ...resolvedBillingSummary,
       ...workflowSummary,
     };
+  }
+
+  private serializePaymentEvents(
+    paymentEvents?: EstimatePaymentEventRecord[] | null,
+  ) {
+    if (!Array.isArray(paymentEvents)) {
+      return [];
+    }
+
+    return paymentEvents
+      .map((event) => ({
+        id: this.serializeNullableId(event._id, 'payment event id'),
+        amount_delta:
+          typeof event.amount_delta === 'number' ? event.amount_delta : 0,
+        amount_paid_total:
+          typeof event.amount_paid_total === 'number'
+            ? event.amount_paid_total
+            : 0,
+        amount_remaining_total:
+          typeof event.amount_remaining_total === 'number'
+            ? event.amount_remaining_total
+            : 0,
+        payment_status:
+          (event.payment_status as PaidStatus | undefined) ??
+          PaidStatus.UNPAID,
+        recorded_at: this.toIsoString(
+          event.recorded_at as Date | string | null | undefined,
+        ),
+        source: typeof event.source === 'string' ? event.source : 'STATUS_UPDATE',
+        actor_user_id: this.serializeNullableId(
+          event.actor_user_id,
+          'payment event actor',
+        ),
+        note: typeof event.note === 'string' ? event.note : null,
+      }))
+      .sort((a, b) => {
+        const aTime = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+        const bTime = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
+        return bTime - aTime;
+      });
   }
 
   private serializeSourceMetadata(metadata?: Record<string, unknown> | null) {
@@ -1072,6 +1347,9 @@ export class EstimatesService {
             typeof estimate.services_count === 'number'
               ? estimate.services_count
               : 0,
+          payment_status: estimate.payment_status ?? PaidStatus.UNPAID,
+          amount_paid:
+            typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0,
         })),
       );
 
@@ -1102,6 +1380,7 @@ export class EstimatesService {
             estimate_status: 1,
             payment_status: 1,
             payment_type: 1,
+            amount_paid: 1,
             due_date: 1,
             labor_total: 1,
             parts_total: 1,
@@ -1825,7 +2104,9 @@ export class EstimatesService {
         admin_invoice_workflow_state: 'needs_resend',
         admin_invoice_workflow_title: 'Needs Resend',
         admin_invoice_workflow_detail:
-          billingSummary.latest_invoice_number ?? 'Refresh required',
+          billingSummary.latest_invoice_number
+            ? `Last invoice: ${billingSummary.latest_invoice_number}`
+            : 'Estimate changed after the last invoice was prepared',
       };
     }
 
@@ -1838,8 +2119,9 @@ export class EstimatesService {
         admin_invoice_workflow_state: 'sent',
         admin_invoice_workflow_title: 'Invoice Accepted',
         admin_invoice_workflow_detail:
-          billingSummary.latest_invoice_number ??
-          'Latest invoice accepted by provider',
+          billingSummary.latest_invoice_number
+            ? `Last invoice: ${billingSummary.latest_invoice_number}`
+            : 'Latest invoice was accepted by the email provider',
       };
     }
 
@@ -1851,7 +2133,9 @@ export class EstimatesService {
         admin_invoice_workflow_state: 'blocked',
         admin_invoice_workflow_title: 'Blocked',
         admin_invoice_workflow_detail:
-          billingSummary.latest_invoice_number ?? 'Resolve billing blockers',
+          billingSummary.latest_invoice_number
+            ? `Last invoice: ${billingSummary.latest_invoice_number}`
+            : 'Resolve billing details before emailing',
       };
     }
 
@@ -1863,14 +2147,16 @@ export class EstimatesService {
         admin_invoice_workflow_state: 'ready_to_send',
         admin_invoice_workflow_title: 'Ready to Send',
         admin_invoice_workflow_detail:
-          billingSummary.latest_invoice_number ?? 'Can send invoice',
+          billingSummary.latest_invoice_number
+            ? `Last invoice: ${billingSummary.latest_invoice_number}`
+            : 'Ready to email to customer',
       };
     }
 
     return {
       admin_invoice_workflow_state: 'blocked',
       admin_invoice_workflow_title: 'Blocked',
-      admin_invoice_workflow_detail: 'Needs billing details',
+      admin_invoice_workflow_detail: 'Add billing details before sending',
     };
   }
 
