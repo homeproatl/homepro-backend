@@ -99,10 +99,14 @@ type InvoiceDocumentPayload = {
   estimate_number_snapshot: string;
   title_snapshot: string;
   time_zone_snapshot: string;
+  complaint_or_request_snapshot: string | null;
+  recommendation_snapshot: string | null;
   customer_snapshot: InvoiceCustomerSnapshot;
   vehicle_snapshot: InvoiceVehicleSnapshot;
   services_snapshot: InvoiceServiceSnapshot[];
   total: number;
+  amount_paid_snapshot: number;
+  amount_remaining_snapshot: number;
   payment_status_snapshot: PaidStatus;
   payment_type_snapshot: string;
   due_date_snapshot: string | null;
@@ -173,6 +177,8 @@ type EstimateBillingSummaryListInput = {
   customer_id: string;
   total: number;
   services_count: number;
+  payment_status: PaidStatus;
+  amount_paid: number;
 };
 
 type InvoiceBillingReadiness = {
@@ -244,6 +250,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     const aggregate = await this.loadInvoiceAggregate(estimateId);
     const latestSnapshot = await this.reconcileLatestSnapshot(aggregate);
     const readiness = await this.getInvoiceBillingReadiness(aggregate);
+    const previewHtml = this.renderInvoiceHtml(aggregate.payload);
 
     return {
       ready: aggregate.blockers.length === 0,
@@ -257,6 +264,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         ? this.serializeSnapshot(latestSnapshot)
         : null,
       preview: aggregate.payload,
+      preview_html: previewHtml,
     };
   }
 
@@ -378,6 +386,14 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         if (estimate.total <= 0 && estimate.services_count === 0) {
           blockers.push(
             'Add at least one billable line before issuing an invoice.',
+          );
+        }
+        if (
+          estimate.payment_status === PaidStatus.PART_PAID &&
+          estimate.amount_paid <= 0
+        ) {
+          blockers.push(
+            'Part-paid invoices require a paid amount greater than zero before sending.',
           );
         }
 
@@ -539,7 +555,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     }
 
     try {
-      const renderPayload = this.serializeSnapshot(snapshot);
+      // Keep send output visually identical to the live preview/download render source.
+      const renderPayload = aggregate.payload;
       const pdfBytes = await this.renderInvoicePdf(renderPayload);
       const emailMessage = this.toInvoiceEmailMessageModel({
         invoiceNumber: snapshot.invoice_number,
@@ -547,7 +564,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           ? `${aggregate.customer.first_name} ${aggregate.customer.last_name}`.trim()
           : aggregate.payload.customer_snapshot.name,
         estimateNumber: aggregate.payload.estimate_number_snapshot,
-        total: aggregate.payload.total,
+        total: aggregate.payload.amount_remaining_snapshot,
         dueDate: aggregate.payload.due_date_snapshot,
         timeZone: aggregate.payload.time_zone_snapshot,
       });
@@ -717,15 +734,23 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       }),
     );
 
+    const total = Math.max(estimate.total ?? 0, 0);
+    const amountPaid = Math.min(Math.max(estimate.amount_paid ?? 0, 0), total);
+    const amountRemaining = Math.max(total - amountPaid, 0);
+
     const payload: InvoiceDocumentPayload = {
       estimate_id: String(estimate._id),
       estimate_number_snapshot: estimate.estimate_number,
       title_snapshot: estimate.title,
       time_zone_snapshot: invoiceTimeZone,
+      complaint_or_request_snapshot: estimate.complaint_or_request ?? null,
+      recommendation_snapshot: estimate.notes ?? null,
       customer_snapshot: customerSnapshot,
       vehicle_snapshot: vehicleSnapshot,
       services_snapshot: servicesSnapshot,
-      total: estimate.total,
+      total,
+      amount_paid_snapshot: amountPaid,
+      amount_remaining_snapshot: amountRemaining,
       payment_status_snapshot: estimate.payment_status,
       payment_type_snapshot: estimate.payment_type,
       due_date_snapshot: estimate.due_date ? estimate.due_date.toISOString() : null,
@@ -747,6 +772,14 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     if (estimate.total <= 0 && servicesSnapshot.length === 0) {
       blockers.push(
         'Add at least one billable line before issuing an invoice.',
+      );
+    }
+    if (
+      payload.payment_status_snapshot === PaidStatus.PART_PAID &&
+      payload.amount_paid_snapshot <= 0
+    ) {
+      blockers.push(
+        'Part-paid invoices require a paid amount greater than zero before sending.',
       );
     }
 
@@ -796,10 +829,14 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       estimate_number_snapshot: payload.estimate_number_snapshot,
       title_snapshot: payload.title_snapshot,
       time_zone_snapshot: payload.time_zone_snapshot,
+      complaint_or_request_snapshot: payload.complaint_or_request_snapshot,
+      recommendation_snapshot: payload.recommendation_snapshot,
       customer_snapshot: payload.customer_snapshot,
       vehicle_snapshot: payload.vehicle_snapshot,
       services_snapshot: payload.services_snapshot,
       total: payload.total,
+      amount_paid_snapshot: payload.amount_paid_snapshot,
+      amount_remaining_snapshot: payload.amount_remaining_snapshot,
       payment_status_snapshot: payload.payment_status_snapshot,
       payment_type_snapshot: payload.payment_type_snapshot,
       due_date_snapshot: payload.due_date_snapshot,
@@ -898,7 +935,12 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           estimate_number_snapshot: aggregate.payload.estimate_number_snapshot,
           title_snapshot: aggregate.payload.title_snapshot,
           time_zone_snapshot: aggregate.payload.time_zone_snapshot,
+          complaint_or_request_snapshot:
+            aggregate.payload.complaint_or_request_snapshot,
+          recommendation_snapshot: aggregate.payload.recommendation_snapshot,
           total: aggregate.payload.total,
+          amount_paid_snapshot: aggregate.payload.amount_paid_snapshot,
+          amount_remaining_snapshot: aggregate.payload.amount_remaining_snapshot,
           payment_status_snapshot: aggregate.payload.payment_status_snapshot,
           payment_type_snapshot: aggregate.payload.payment_type_snapshot,
           due_date_snapshot: aggregate.payload.due_date_snapshot
@@ -947,7 +989,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       estimate_number_snapshot: string;
       title_snapshot: string;
       time_zone_snapshot: string | null;
+      complaint_or_request_snapshot: string | null;
+      recommendation_snapshot: string | null;
       total: number;
+      amount_paid_snapshot: number;
+      amount_remaining_snapshot: number;
       payment_status_snapshot: PaidStatus;
       payment_type_snapshot: string;
       due_date_snapshot: Date | string | null;
@@ -971,10 +1017,26 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       billable_hash: raw.billable_hash,
       estimate_number_snapshot: raw.estimate_number_snapshot,
       title_snapshot: raw.title_snapshot,
+      complaint_or_request_snapshot:
+        typeof raw.complaint_or_request_snapshot === 'string'
+          ? raw.complaint_or_request_snapshot
+          : null,
+      recommendation_snapshot:
+        typeof raw.recommendation_snapshot === 'string'
+          ? raw.recommendation_snapshot
+          : null,
       customer_snapshot: raw.customer_snapshot as InvoiceCustomerSnapshot,
       vehicle_snapshot: raw.vehicle_snapshot as InvoiceVehicleSnapshot,
       services_snapshot: raw.services_snapshot as InvoiceServiceSnapshot[],
       total: raw.total,
+      amount_paid_snapshot:
+        typeof raw.amount_paid_snapshot === 'number'
+          ? raw.amount_paid_snapshot
+          : 0,
+      amount_remaining_snapshot:
+        typeof raw.amount_remaining_snapshot === 'number'
+          ? raw.amount_remaining_snapshot
+          : Math.max((raw.total ?? 0) - (raw.amount_paid_snapshot ?? 0), 0),
       payment_status_snapshot: raw.payment_status_snapshot,
       payment_type_snapshot: raw.payment_type_snapshot,
       time_zone_snapshot:
@@ -1183,6 +1245,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       estimateNumber: invoice.estimate_number_snapshot,
       title: invoice.title_snapshot,
       timeZone: invoice.time_zone_snapshot,
+      customerComment: invoice.complaint_or_request_snapshot ?? null,
+      recommendation: invoice.recommendation_snapshot ?? null,
       customerName: invoice.customer_snapshot.name,
       customerEmail: invoice.customer_snapshot.email,
       customerPhone: invoice.customer_snapshot.phone,
@@ -1194,6 +1258,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       paymentStatus: invoice.payment_status_snapshot,
       paymentType: invoice.payment_type_snapshot,
       total: invoice.total,
+      amountPaid: invoice.amount_paid_snapshot,
+      amountRemaining: invoice.amount_remaining_snapshot,
       services: this.getInvoiceServiceRows(invoice),
       mode:
         'invoice_number' in invoice && invoice.invoice_number

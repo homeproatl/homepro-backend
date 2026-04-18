@@ -106,17 +106,17 @@ export class AuthService {
       }
 
       const authenticatedUser = this.usersService.toAuthenticatedUser(user);
-      const tokens = await this.issueTokens(
+      const accessToken = await this.issueAccessToken(
         user.id,
         user.email,
         authenticatedUser.role,
         this.getTokenVersion(user.token_version),
       );
-      await this.storeRefreshTokenHash(user, tokens.refreshToken);
 
       return {
         user: authenticatedUser,
-        ...tokens,
+        accessToken,
+        refreshToken,
       };
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
@@ -179,6 +179,32 @@ export class AuthService {
     );
 
     return { accessToken, refreshToken };
+  }
+
+  private async issueAccessToken(
+    userId: string,
+    email: string,
+    role: string,
+    tokenVersion: number,
+  ) {
+    return this.jwtService.signAsync(
+      this.buildTokenPayload({
+        sub: userId,
+        email,
+        role,
+        type: 'access',
+        token_version: tokenVersion,
+      }),
+      {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: this.configService.getOrThrow<string>(
+          'JWT_ACCESS_TTL',
+        ) as never,
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      },
+    );
   }
 
   private buildTokenPayload(payload: AuthTokenPayload) {

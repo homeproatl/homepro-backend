@@ -62,8 +62,20 @@ export class EstimateInvoiceSnapshot {
   @Prop({ required: true, trim: true })
   time_zone_snapshot!: string;
 
+  @Prop({ type: String, default: null })
+  complaint_or_request_snapshot!: string | null;
+
+  @Prop({ type: String, default: null })
+  recommendation_snapshot!: string | null;
+
   @Prop({ required: true })
   total!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  amount_paid_snapshot!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  amount_remaining_snapshot!: number;
 
   @Prop({
     type: String,

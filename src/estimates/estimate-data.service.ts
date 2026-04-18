@@ -126,10 +126,11 @@ export class EstimateDataService {
     input: EstimateWriteInput & { estimate_number: string },
   ) {
     const prepared = await this.prepareEstimateWrite(input);
+    const normalizedTitle = this.normalizeEstimateTitle(input.title);
 
     return this.estimateModel.create({
       estimate_number: input.estimate_number,
-      title: input.title.trim(),
+      title: normalizedTitle,
       customer_id: prepared.customer._id,
       vehicle_id: prepared.vehicle._id,
       scheduled_start: prepared.scheduledStart,
@@ -162,7 +163,7 @@ export class EstimateDataService {
       estimate,
     );
 
-    estimate.title = input.title.trim();
+    estimate.title = this.normalizeEstimateTitle(input.title);
     estimate.customer_id = prepared.customer._id;
     estimate.vehicle_id = prepared.vehicle._id;
     estimate.scheduled_start = prepared.scheduledStart;
@@ -179,6 +180,10 @@ export class EstimateDataService {
 
     await estimate.save();
     return estimate;
+  }
+
+  private normalizeEstimateTitle(value: string) {
+    return value.trim().toUpperCase();
   }
 
   private normalizeSourceMetadata(

@@ -62,7 +62,7 @@ describe('AuthService', () => {
     );
   });
 
-  it('rotates the stored refresh token hash after a successful refresh', async () => {
+  it('keeps refresh stable after a successful refresh so multiple tabs can restore together', async () => {
     const user = {
       id: '507f1f77bcf86cd799439011',
       email: 'rico@admin.com',
@@ -92,8 +92,7 @@ describe('AuthService', () => {
       }),
       signAsync: jest
         .fn()
-        .mockResolvedValueOnce('next-access-token')
-        .mockResolvedValueOnce('next-refresh-token'),
+        .mockResolvedValueOnce('next-access-token'),
     } as unknown as JwtService;
     const configService = {
       getOrThrow: jest.fn((key: string) => {
@@ -117,7 +116,7 @@ describe('AuthService', () => {
       service.refresh('current-refresh-token'),
     ).resolves.toMatchObject({
       accessToken: 'next-access-token',
-      refreshToken: 'next-refresh-token',
+      refreshToken: 'current-refresh-token',
     });
     expect(jwtService.verify).toHaveBeenCalledWith('current-refresh-token', {
       secret: 'refresh-secret',
@@ -140,24 +139,10 @@ describe('AuthService', () => {
         audience: JWT_AUDIENCE,
       }),
     );
-    expect(jwtService.signAsync).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        sub: user.id,
-        type: 'refresh',
-        token_version: 4,
-      }),
-      expect.objectContaining({
-        secret: 'refresh-secret',
-        expiresIn: '7d',
-        algorithm: JWT_ALGORITHM,
-        issuer: JWT_ISSUER,
-        audience: JWT_AUDIENCE,
-      }),
-    );
+    expect(jwtService.signAsync).toHaveBeenCalledTimes(1);
     expect(user.refresh_token_hash).toBe(
-      createHash('sha256').update('next-refresh-token').digest('hex'),
+      createHash('sha256').update('current-refresh-token').digest('hex'),
     );
-    expect(user.save).toHaveBeenCalled();
+    expect(user.save).not.toHaveBeenCalled();
   });
 });

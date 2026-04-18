@@ -67,7 +67,25 @@ async function bootstrap() {
   );
 
   const port = configService.getOrThrow<number>('APP_PORT');
-  await app.listen(port);
+  try {
+    await app.listen(port);
+  } catch (error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : null;
+
+    if (code === 'EADDRINUSE') {
+      logger.error(
+        `Port ${port} is already in use. Stop the running backend process or set a different APP_PORT before retrying.`,
+      );
+      process.exitCode = 1;
+      await app.close();
+      return;
+    }
+
+    throw error;
+  }
 
   const appUrl = await app.getUrl();
   logger.log(`Rico backend listening on ${appUrl}`);

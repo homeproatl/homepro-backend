@@ -214,6 +214,8 @@ describe('EstimateInvoiceService', () => {
       estimateNumber: 'EST-001',
       title: 'Brake Service',
       timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
       customerName: 'Rico Customer',
       customerEmail: 'customer@test.com',
       customerPhone: '555-0100',
@@ -225,6 +227,8 @@ describe('EstimateInvoiceService', () => {
       paymentStatus: 'UNPAID',
       paymentType: 'POS_CARD',
       total: 135,
+      amountPaid: 0,
+      amountRemaining: 135,
       services: [
         {
           name: 'Brake Service',
@@ -254,15 +258,18 @@ describe('EstimateInvoiceService', () => {
       mode: 'issued',
     });
 
-    expect(html).toContain('Total Due');
+    expect(html).toContain('Invoice');
     expect(html).toContain('Document No.');
-    expect(html).toContain('Payment Type Pos Card');
+    expect(html).toContain('Customer Comment');
+    expect(html).toContain('Recommendation');
+    expect(html).toContain('Rate / hr');
+    expect(html).toContain('Part used');
     expect(html).toContain('Labor subtotal');
     expect(html).toContain('Parts subtotal');
     expect(html).toContain('Total due');
     expect(html).toContain('Brake Service');
     expect(html).toContain('Brake labor');
-    expect(html).toContain('Part # BP-100');
+    expect(html).toContain('M Rico');
   });
 
   it('serializes invoice snapshots without leaking raw Mongo fields', () => {
