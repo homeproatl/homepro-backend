@@ -220,7 +220,7 @@ export class EstimatesService {
     const estimates = (await this.findAll()) as DashboardSummaryEstimate[];
     const overviewEstimates = this.getDashboardOverviewEstimates(estimates);
     let activeJobs = 0;
-    let readyToSend = 0;
+    let completedJobs = 0;
     let overdueBilling = 0;
     let unpaidBilling = 0;
 
@@ -236,8 +236,8 @@ export class EstimatesService {
         activeJobs += 1;
       }
 
-      if (estimate.admin_invoice_workflow_state === 'ready_to_send') {
-        readyToSend += 1;
+      if (estimate.estimate_status === EstimateStatus.COMPLETED) {
+        completedJobs += 1;
       }
 
       if (!this.isBillingVisible(estimate)) {
@@ -265,7 +265,7 @@ export class EstimatesService {
     return {
       overview_estimates: overviewEstimates,
       active_estimates: activeJobs,
-      ready_to_send: readyToSend,
+      completed_jobs: completedJobs,
       overdue_billing: overdueBilling,
       unpaid_billing: unpaidBilling,
     };

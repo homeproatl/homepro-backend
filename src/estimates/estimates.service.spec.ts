@@ -294,7 +294,7 @@ describe('EstimatesService', () => {
 
     await expect(service.getDashboardSummary()).resolves.toMatchObject({
       active_estimates: 1,
-      ready_to_send: 1,
+      completed_jobs: 1,
       overdue_billing: 1,
       unpaid_billing: 2,
     });

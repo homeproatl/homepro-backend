@@ -269,7 +269,126 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Total due');
     expect(html).toContain('Brake Service');
     expect(html).toContain('Brake labor');
+    expect(html).toContain('font-weight:500;color:#000000;">Labor rates</th>');
+    expect(html).toContain('font-weight:500;color:#000000;">Part used</th>');
     expect(html).toContain('M Rico');
+  });
+
+  it('renders a paid amount row for part-paid invoices so the remaining balance is visually explained', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-654321',
+      estimateNumber: 'EST-002',
+      title: 'Suspension Service',
+      timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'XYZ-789 · Honda Accord',
+      vehicleVin: 'VIN-789',
+      vehiclePlate: 'XYZ-789',
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'PART_PAID',
+      paymentType: 'POS_CARD',
+      total: 460,
+      amountPaid: 230,
+      amountRemaining: 230,
+      services: [
+        {
+          name: 'Suspension Service',
+          note: 'Front suspension work',
+          laborTotal: 260,
+          partsTotal: 200,
+          total: 460,
+          laborLines: [
+            {
+              description: 'Suspension labor',
+              hours: 2,
+              rate: 130,
+              subTotal: 260,
+            },
+          ],
+          partLines: [
+            {
+              description: 'Control arm',
+              partNumber: 'CA-200',
+              quantity: 1,
+              price: 200,
+              subTotal: 200,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Labor subtotal');
+    expect(html).toContain('$260.00');
+    expect(html).toContain('Parts subtotal');
+    expect(html).toContain('$200.00');
+    expect(html).toContain('Part paid');
+    expect(html).toContain('-$230.00');
+    expect(html).toContain('Total due');
+    expect(html).toContain('$230.00');
+  });
+
+  it('derives total due from total minus amount paid when a snapshot carries a stale remaining balance', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-777777',
+      estimateNumber: 'EST-003',
+      title: 'Engine Service',
+      timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'RST-456 · Ford Fusion',
+      vehicleVin: 'VIN-456',
+      vehiclePlate: 'RST-456',
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'PART_PAID',
+      paymentType: 'POS_CARD',
+      total: 460,
+      amountPaid: 230,
+      amountRemaining: 999,
+      services: [
+        {
+          name: 'Engine Service',
+          note: 'Tune-up and parts',
+          laborTotal: 260,
+          partsTotal: 200,
+          total: 460,
+          laborLines: [
+            {
+              description: 'Engine labor',
+              hours: 2,
+              rate: 130,
+              subTotal: 260,
+            },
+          ],
+          partLines: [
+            {
+              description: 'Spark plugs',
+              partNumber: 'SP-400',
+              quantity: 1,
+              price: 200,
+              subTotal: 200,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Part paid');
+    expect(html).toContain('-$230.00');
+    expect(html).toContain('Total due');
+    expect(html).toContain('$230.00');
+    expect(html).not.toContain('$999.00');
   });
 
   it('serializes invoice snapshots without leaking raw Mongo fields', () => {

@@ -171,11 +171,11 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
               <div style="margin-top:12px;overflow-x:auto;">
                 <table style="width:100%;min-width:560px;border-collapse:collapse;">
                   <thead>
-                    <tr style="border-bottom:1px solid #e2e8f0;text-align:left;color:#64748b;">
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Labor rates</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Hours</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Rate / hr</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;text-align:right;">Amount</th>
+                    <tr style="border-bottom:1px solid #e2e8f0;text-align:left;">
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Labor rates</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Hours</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Rate / hr</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;text-align:right;">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -191,11 +191,11 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
               <div style="margin-top:12px;overflow-x:auto;">
                 <table style="width:100%;min-width:560px;border-collapse:collapse;">
                   <thead>
-                    <tr style="border-bottom:1px solid #e2e8f0;text-align:left;color:#64748b;">
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Part used</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Qty</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;">Rate</th>
-                      <th style="padding:8px;font-size:12px;font-weight:500;text-align:right;">Amount</th>
+                    <tr style="border-bottom:1px solid #e2e8f0;text-align:left;">
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Part used</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Qty</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;">Rate</th>
+                      <th style="padding:8px;font-size:12px;font-weight:500;color:#000000;text-align:right;">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -217,7 +217,14 @@ export function renderInvoiceDocumentHtml(
 ) {
   const logoSrc = options.logoSrc ?? INVOICE_LOGO_DATA_URL;
   const invoiceSummary = summarizeServices(invoice.services);
-  const amountRemaining = Math.max(invoice.amountRemaining ?? invoice.total ?? 0, 0);
+  const total = Math.max(invoice.total ?? invoiceSummary.grandTotal, 0);
+  const amountPaid = Math.min(
+    Math.max(invoice.amountPaid ?? 0, 0),
+    total,
+  );
+  const amountRemaining = Math.max(total - amountPaid, 0);
+  const paidLabel =
+    invoice.paymentStatus === 'PART_PAID' ? 'Part paid' : 'Amount paid';
   const lineItemsTable = renderInvoiceLineItemsTable(invoice.services);
   const mechanicName = 'M Rico';
   const mechanicPhone = '(347) 730-3281';
@@ -407,6 +414,14 @@ export function renderInvoiceDocumentHtml(
               <span style="font-size:14px;color:#64748b;">Parts subtotal</span>
               <span style="font-size:14px;font-weight:500;color:#0f172a;">${formatCurrency(invoiceSummary.partsTotal)}</span>
             </div>
+            ${
+              amountPaid > 0
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+              <span style="font-size:14px;color:#64748b;">${escapeHtml(paidLabel)}</span>
+              <span style="font-size:14px;font-weight:500;color:#0f766e;">-${formatCurrency(amountPaid)}</span>
+            </div>`
+                : ''
+            }
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
               <span style="font-size:16px;font-weight:600;color:#0f172a;">Total due</span>
               <span style="font-size:16px;font-weight:600;color:#0f172a;">${formatCurrency(amountRemaining)}</span>
