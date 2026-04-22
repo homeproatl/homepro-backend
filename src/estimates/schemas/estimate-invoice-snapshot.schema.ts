@@ -68,6 +68,15 @@ export class EstimateInvoiceSnapshot {
   @Prop({ type: String, default: null })
   recommendation_snapshot!: string | null;
 
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal_snapshot!: number;
+
+  @Prop({ required: true, min: 0, default: 8.875 })
+  tax_rate_snapshot!: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  tax_amount_snapshot!: number;
+
   @Prop({ required: true })
   total!: number;
 

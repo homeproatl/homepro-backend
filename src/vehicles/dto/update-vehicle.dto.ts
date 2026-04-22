@@ -32,6 +32,11 @@ export class UpdateVehicleDto {
   mileage?: number | null;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  mileage_out?: number | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(32)
   vin?: string | null;

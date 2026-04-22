@@ -64,7 +64,10 @@ describe('EstimateInvoiceService', () => {
         estimate_number_snapshot: 'EST-001',
         title_snapshot: 'Inspection',
         time_zone_snapshot: 'America/New_York',
-        total: 100,
+        subtotal_snapshot: 100,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
+        total: 108.88,
         payment_status_snapshot: 'UNPAID',
         payment_type_snapshot: 'POS_CARD',
         due_date_snapshot: null,
@@ -219,16 +222,24 @@ describe('EstimateInvoiceService', () => {
       customerName: 'Rico Customer',
       customerEmail: 'customer@test.com',
       customerPhone: '555-0100',
-      vehicleLabel: 'ABC-123 · Toyota Camry',
-      vehicleVin: 'VIN-123',
-      vehiclePlate: 'ABC-123',
+      vehicleLabel: 'FRD45FG · Honda Civic',
+      vehicleVin: '2HGES165X3H619036',
+      vehiclePlate: 'FRD45FG',
+      vehicleYear: 2003,
+      vehicleMake: 'Honda',
+      vehicleModel: 'Civic',
+      vehicleMileage: 183368,
+      vehicleMileageOut: 183500,
       dueDate: '2026-03-29T00:00:00.000Z',
       generatedAt: '2026-03-25T00:00:00.000Z',
       paymentStatus: 'UNPAID',
       paymentType: 'POS_CARD',
-      total: 135,
+      subTotal: 135,
+      taxRate: 8.875,
+      taxAmount: 11.98,
+      total: 146.98,
       amountPaid: 0,
-      amountRemaining: 135,
+      amountRemaining: 146.98,
       services: [
         {
           name: 'Brake Service',
@@ -259,9 +270,25 @@ describe('EstimateInvoiceService', () => {
     });
 
     expect(html).toContain('Invoice');
-    expect(html).toContain('Document No.');
-    expect(html).toContain('Customer Comment');
-    expect(html).toContain('Recommendation');
+    expect(html).toContain('GMB Auto');
+    expect(html).toContain('301 Elmont Rd');
+    expect(html).toContain('Elmont, NY 11003');
+    expect(html).toContain('(646) 807-6937');
+    expect(html).toContain('gmb.auto@yahoo.com');
+    expect(html).toContain('Invoice #INV-123456');
+    expect(html).toContain('Created: 03/24/2026');
+    expect(html).toContain('Invoiced: 03/24/2026');
+    expect(html).toContain('Payment Term: On Receipt');
+    expect(html).toContain('Payment Due: 03/29/2026');
+    expect(html).not.toContain('Payment Due: 03/28/2026');
+    expect(html).toContain('Service Writer: M Rico');
+    expect(html).not.toContain('Document No.');
+    expect(html).toContain('2003 HONDA Civic');
+    expect(html).toContain('VIN: 2HGES165X3H619036');
+    expect(html).toContain('Mileage In: 183,368 mi');
+    expect(html).toContain('Mileage Out: 183,500 mi');
+    expect(html).toContain('CUSTOMER COMMENT');
+    expect(html).toContain('RECOMMENDATION');
     expect(html).toContain('Rate / hr');
     expect(html).toContain('Part used');
     expect(html).toContain('Labor subtotal');
@@ -269,8 +296,12 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Total due');
     expect(html).toContain('Brake Service');
     expect(html).toContain('Brake labor');
-    expect(html).toContain('font-weight:500;color:#000000;">Labor rates</th>');
-    expect(html).toContain('font-weight:500;color:#000000;">Part used</th>');
+    expect(html).toContain(
+      'border-collapse:collapse;border:1px solid #cbd5e1;',
+    );
+    expect(html).toContain(
+      'background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;',
+    );
     expect(html).toContain('M Rico');
   });
 
@@ -288,10 +319,18 @@ describe('EstimateInvoiceService', () => {
       vehicleLabel: 'XYZ-789 · Honda Accord',
       vehicleVin: 'VIN-789',
       vehiclePlate: 'XYZ-789',
+      vehicleYear: 2023,
+      vehicleMake: 'Honda',
+      vehicleModel: 'Accord',
+      vehicleMileage: 50000,
+      vehicleMileageOut: 50000,
       dueDate: '2026-03-29T00:00:00.000Z',
       generatedAt: '2026-03-25T00:00:00.000Z',
       paymentStatus: 'PART_PAID',
       paymentType: 'POS_CARD',
+      subTotal: 460,
+      taxRate: 0,
+      taxAmount: 0,
       total: 460,
       amountPaid: 230,
       amountRemaining: 230,
@@ -328,6 +367,8 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('$260.00');
     expect(html).toContain('Parts subtotal');
     expect(html).toContain('$200.00');
+    expect(html).toContain('Subtotal');
+    expect(html).not.toContain('Tax');
     expect(html).toContain('Part paid');
     expect(html).toContain('-$230.00');
     expect(html).toContain('Total due');
@@ -348,10 +389,18 @@ describe('EstimateInvoiceService', () => {
       vehicleLabel: 'RST-456 · Ford Fusion',
       vehicleVin: 'VIN-456',
       vehiclePlate: 'RST-456',
+      vehicleYear: 2020,
+      vehicleMake: 'Ford',
+      vehicleModel: 'Fusion',
+      vehicleMileage: 64000,
+      vehicleMileageOut: 64000,
       dueDate: '2026-03-29T00:00:00.000Z',
       generatedAt: '2026-03-25T00:00:00.000Z',
       paymentStatus: 'PART_PAID',
       paymentType: 'POS_CARD',
+      subTotal: 460,
+      taxRate: 0,
+      taxAmount: 0,
       total: 460,
       amountPaid: 230,
       amountRemaining: 999,

@@ -38,6 +38,9 @@ export class Vehicle {
   @Prop({ type: Number, default: null })
   mileage!: number | null;
 
+  @Prop({ type: Number, default: null })
+  mileage_out!: number | null;
+
   @Prop({ type: String, trim: true, uppercase: true, default: null })
   vin!: string | null;
 

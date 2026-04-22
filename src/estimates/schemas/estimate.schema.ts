@@ -281,6 +281,15 @@ export class Estimate {
   @Prop({ type: Number, required: true, default: 0, min: 0 })
   parts_total!: number;
 
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  subtotal!: number;
+
+  @Prop({ type: Number, required: true, default: 8.875, min: 0 })
+  tax_rate!: number;
+
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  tax_amount!: number;
+
   @Prop({ type: Number, required: true, default: 0 })
   total!: number;
 

@@ -1,8 +1,10 @@
 import {
+  DEFAULT_ESTIMATE_TAX_RATE_PERCENT,
   calculateEstimateTotals,
   calculateLaborSubtotal,
   calculatePartSubtotal,
   calculateServiceTotals,
+  resolveEstimateTotals,
 } from './estimate-calculators';
 
 describe('estimate calculators', () => {
@@ -43,7 +45,7 @@ describe('estimate calculators', () => {
     });
   });
 
-  it('computes the final estimate total from grouped service totals', () => {
+  it('computes the final estimate total without tax', () => {
     expect(
       calculateEstimateTotals([
         { labor_total: 200, parts_total: 50, total: 250 },
@@ -52,8 +54,52 @@ describe('estimate calculators', () => {
     ).toEqual({
       labor_total: 300,
       parts_total: 75,
+      subtotal: 375,
+      tax_rate: 0,
+      tax_amount: 0,
       total: 375,
     });
+  });
+
+  it('resolves totals for legacy estimates without tax', () => {
+    expect(
+      resolveEstimateTotals({
+        labor_total: 260,
+        parts_total: 200,
+        total: 460,
+      }),
+    ).toEqual({
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: 460,
+    });
+  });
+
+  it('resolves totals with applyDefaultTaxWhenMissing producing no tax', () => {
+    expect(
+      resolveEstimateTotals(
+        {
+          labor_total: 260,
+          parts_total: 200,
+          total: 460,
+        },
+        { applyDefaultTaxWhenMissing: true },
+      ),
+    ).toEqual({
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: 460,
+    });
+  });
+
+  it('has a default tax rate of zero', () => {
+    expect(DEFAULT_ESTIMATE_TAX_RATE_PERCENT).toBe(0);
   });
 
   it('rejects invalid discount values', () => {

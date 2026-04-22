@@ -49,6 +49,7 @@ import {
 } from './schemas/estimate-invoice-dispatch.schema';
 import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot-status.enum';
 import { EstimateInvoiceDispatchStatus } from './enums/estimate-invoice-dispatch-status.enum';
+import { resolveEstimateTotals } from '../common/calculators/estimate-calculators';
 
 type InvoiceCustomerSnapshot = {
   customer_id: string;
@@ -62,6 +63,11 @@ type InvoiceVehicleSnapshot = {
   label: string;
   vin: string | null;
   license_plate: string | null;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  mileage: number | null;
+  mileage_out: number | null;
 };
 
 type InvoiceLaborSnapshot = {
@@ -104,6 +110,9 @@ type InvoiceDocumentPayload = {
   customer_snapshot: InvoiceCustomerSnapshot;
   vehicle_snapshot: InvoiceVehicleSnapshot;
   services_snapshot: InvoiceServiceSnapshot[];
+  subtotal_snapshot: number;
+  tax_rate_snapshot: number;
+  tax_amount_snapshot: number;
   total: number;
   amount_paid_snapshot: number;
   amount_remaining_snapshot: number;
@@ -702,6 +711,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       label: this.toVehicleSnapshotLabel(vehicle),
       vin: vehicle.vin ?? null,
       license_plate: vehicle.license_plate ?? null,
+      year: vehicle.year ?? null,
+      make: vehicle.make ?? null,
+      model: vehicle.model ?? null,
+      mileage: vehicle.mileage ?? null,
+      mileage_out: vehicle.mileage_out ?? null,
     };
 
     const servicesSnapshot: InvoiceServiceSnapshot[] = estimate.services.map(
@@ -734,7 +748,25 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       }),
     );
 
-    const total = Math.max(estimate.total ?? 0, 0);
+    const estimateTotals = resolveEstimateTotals(
+      {
+        labor_total:
+          typeof estimate.labor_total === 'number' ? estimate.labor_total : 0,
+        parts_total:
+          typeof estimate.parts_total === 'number' ? estimate.parts_total : 0,
+        subtotal:
+          typeof estimate.subtotal === 'number' ? estimate.subtotal : undefined,
+        tax_rate:
+          typeof estimate.tax_rate === 'number' ? estimate.tax_rate : undefined,
+        tax_amount:
+          typeof estimate.tax_amount === 'number'
+            ? estimate.tax_amount
+            : undefined,
+        total: typeof estimate.total === 'number' ? estimate.total : undefined,
+      },
+      { applyDefaultTaxWhenMissing: true },
+    );
+    const total = estimateTotals.total;
     const amountPaid = Math.min(Math.max(estimate.amount_paid ?? 0, 0), total);
     const amountRemaining = Math.max(total - amountPaid, 0);
 
@@ -748,6 +780,9 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       customer_snapshot: customerSnapshot,
       vehicle_snapshot: vehicleSnapshot,
       services_snapshot: servicesSnapshot,
+      subtotal_snapshot: estimateTotals.subtotal,
+      tax_rate_snapshot: estimateTotals.tax_rate,
+      tax_amount_snapshot: estimateTotals.tax_amount,
       total,
       amount_paid_snapshot: amountPaid,
       amount_remaining_snapshot: amountRemaining,
@@ -834,6 +869,9 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       customer_snapshot: payload.customer_snapshot,
       vehicle_snapshot: payload.vehicle_snapshot,
       services_snapshot: payload.services_snapshot,
+      subtotal_snapshot: payload.subtotal_snapshot,
+      tax_rate_snapshot: payload.tax_rate_snapshot,
+      tax_amount_snapshot: payload.tax_amount_snapshot,
       total: payload.total,
       amount_paid_snapshot: payload.amount_paid_snapshot,
       amount_remaining_snapshot: payload.amount_remaining_snapshot,
@@ -991,6 +1029,9 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       time_zone_snapshot: string | null;
       complaint_or_request_snapshot: string | null;
       recommendation_snapshot: string | null;
+      subtotal_snapshot?: number;
+      tax_rate_snapshot?: number;
+      tax_amount_snapshot?: number;
       total: number;
       amount_paid_snapshot: number;
       amount_remaining_snapshot: number;
@@ -1007,6 +1048,37 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       created_at: Date | string | null;
       updated_at: Date | string | null;
     };
+
+    const servicesSnapshot = raw.services_snapshot as InvoiceServiceSnapshot[];
+    const snapshotSubtotal = servicesSnapshot.reduce(
+      (sum, service) => sum + (typeof service.total === 'number' ? service.total : 0),
+      0,
+    );
+    const resolvedTotals = resolveEstimateTotals({
+      labor_total: servicesSnapshot.reduce(
+        (sum, service) =>
+          sum + (typeof service.labor_total === 'number' ? service.labor_total : 0),
+        0,
+      ),
+      parts_total: servicesSnapshot.reduce(
+        (sum, service) =>
+          sum + (typeof service.parts_total === 'number' ? service.parts_total : 0),
+        0,
+      ),
+      subtotal:
+        typeof raw.subtotal_snapshot === 'number'
+          ? raw.subtotal_snapshot
+          : snapshotSubtotal,
+      tax_rate:
+        typeof raw.tax_rate_snapshot === 'number'
+          ? raw.tax_rate_snapshot
+          : undefined,
+      tax_amount:
+        typeof raw.tax_amount_snapshot === 'number'
+          ? raw.tax_amount_snapshot
+          : undefined,
+      total: raw.total,
+    });
 
     return {
       id: String(raw._id),
@@ -1027,8 +1099,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           : null,
       customer_snapshot: raw.customer_snapshot as InvoiceCustomerSnapshot,
       vehicle_snapshot: raw.vehicle_snapshot as InvoiceVehicleSnapshot,
-      services_snapshot: raw.services_snapshot as InvoiceServiceSnapshot[],
-      total: raw.total,
+      services_snapshot: servicesSnapshot,
+      subtotal_snapshot: resolvedTotals.subtotal,
+      tax_rate_snapshot: resolvedTotals.tax_rate,
+      tax_amount_snapshot: resolvedTotals.tax_amount,
+      total: resolvedTotals.total,
       amount_paid_snapshot:
         typeof raw.amount_paid_snapshot === 'number'
           ? raw.amount_paid_snapshot
@@ -1036,7 +1111,10 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       amount_remaining_snapshot:
         typeof raw.amount_remaining_snapshot === 'number'
           ? raw.amount_remaining_snapshot
-          : Math.max((raw.total ?? 0) - (raw.amount_paid_snapshot ?? 0), 0),
+          : Math.max(
+              resolvedTotals.total - (raw.amount_paid_snapshot ?? 0),
+              0,
+            ),
       payment_status_snapshot: raw.payment_status_snapshot,
       payment_type_snapshot: raw.payment_type_snapshot,
       time_zone_snapshot:
@@ -1253,10 +1331,33 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       vehicleLabel: invoice.vehicle_snapshot.label,
       vehicleVin: invoice.vehicle_snapshot.vin ?? 'Not recorded',
       vehiclePlate: invoice.vehicle_snapshot.license_plate ?? 'Not recorded',
+      vehicleYear:
+        typeof invoice.vehicle_snapshot.year === 'number'
+          ? invoice.vehicle_snapshot.year
+          : null,
+      vehicleMake:
+        typeof invoice.vehicle_snapshot.make === 'string'
+          ? invoice.vehicle_snapshot.make
+          : null,
+      vehicleModel:
+        typeof invoice.vehicle_snapshot.model === 'string'
+          ? invoice.vehicle_snapshot.model
+          : null,
+      vehicleMileage:
+        typeof invoice.vehicle_snapshot.mileage === 'number'
+          ? invoice.vehicle_snapshot.mileage
+          : null,
+      vehicleMileageOut:
+        typeof invoice.vehicle_snapshot.mileage_out === 'number'
+          ? invoice.vehicle_snapshot.mileage_out
+          : null,
       dueDate: invoice.due_date_snapshot,
       generatedAt: invoice.generated_at,
       paymentStatus: invoice.payment_status_snapshot,
       paymentType: invoice.payment_type_snapshot,
+      subTotal: invoice.subtotal_snapshot,
+      taxRate: invoice.tax_rate_snapshot,
+      taxAmount: invoice.tax_amount_snapshot,
       total: invoice.total,
       amountPaid: invoice.amount_paid_snapshot,
       amountRemaining: invoice.amount_remaining_snapshot,

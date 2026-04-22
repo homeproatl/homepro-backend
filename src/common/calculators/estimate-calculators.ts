@@ -68,11 +68,32 @@ export type CalculatedServiceTotals = {
 export type CalculatedEstimateTotals = {
   labor_total: number;
   parts_total: number;
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
   total: number;
 };
 
+export const DEFAULT_ESTIMATE_TAX_RATE_PERCENT = 0;
+
 function roundCurrency(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Number((value + 1e-9).toFixed(2));
+}
+
+function normalizeCurrencyValue(value: number | undefined) {
+  if (!Number.isFinite(value) || (value ?? 0) < 0) {
+    return null;
+  }
+
+  return roundCurrency(value ?? 0);
+}
+
+function normalizeTaxRate(value: number | undefined) {
+  if (!Number.isFinite(value) || (value ?? 0) < 0) {
+    return DEFAULT_ESTIMATE_TAX_RATE_PERCENT;
+  }
+
+  return Math.round(((value ?? DEFAULT_ESTIMATE_TAX_RATE_PERCENT) + Number.EPSILON) * 1000) / 1000;
 }
 
 function validateNonNegativeNumber(name: string, value: number) {
@@ -210,12 +231,40 @@ export function calculateEstimateTotals(
   const parts_total = roundCurrency(
     services.reduce((sum, service) => sum + service.parts_total, 0),
   );
+  const subtotal = roundCurrency(
+    services.reduce((sum, service) => sum + service.total, 0),
+  );
 
   return {
     labor_total,
     parts_total,
-    total: roundCurrency(
-      services.reduce((sum, service) => sum + service.total, 0),
-    ),
+    subtotal,
+    tax_rate: 0,
+    tax_amount: 0,
+    total: subtotal,
+  };
+}
+
+export function resolveEstimateTotals(input: {
+  labor_total?: number;
+  parts_total?: number;
+  subtotal?: number;
+  tax_rate?: number;
+  tax_amount?: number;
+  total?: number;
+}, options?: { applyDefaultTaxWhenMissing?: boolean }): CalculatedEstimateTotals {
+  const labor_total = normalizeCurrencyValue(input.labor_total) ?? 0;
+  const parts_total = normalizeCurrencyValue(input.parts_total) ?? 0;
+  const subtotal =
+    normalizeCurrencyValue(input.subtotal) ??
+    roundCurrency(labor_total + parts_total);
+
+  return {
+    labor_total,
+    parts_total,
+    subtotal: subtotal > 0 ? subtotal : roundCurrency(labor_total + parts_total),
+    tax_rate: 0,
+    tax_amount: 0,
+    total: subtotal > 0 ? subtotal : roundCurrency(labor_total + parts_total),
   };
 }

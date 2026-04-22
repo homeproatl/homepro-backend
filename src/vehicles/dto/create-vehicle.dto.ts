@@ -38,6 +38,11 @@ export class CreateVehicleDto {
   mileage?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  mileage_out?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(32)
   vin?: string | null;

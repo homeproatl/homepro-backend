@@ -60,6 +60,7 @@ export class VehiclesService {
         model: payload.model,
         sub_model: payload.sub_model ?? null,
         mileage: payload.mileage ?? null,
+        mileage_out: payload.mileage_out ?? null,
         vin,
         license_plate: licensePlate,
       });
@@ -132,6 +133,9 @@ export class VehiclesService {
     if (payload.model !== undefined) vehicle.set('model', payload.model);
     if (payload.sub_model !== undefined) vehicle.sub_model = payload.sub_model;
     if (payload.mileage !== undefined) vehicle.mileage = payload.mileage;
+    if (payload.mileage_out !== undefined) {
+      vehicle.mileage_out = payload.mileage_out;
+    }
     if (payload.vin !== undefined) {
       vehicle.vin = this.normalizeVehicleIdentifier(payload.vin);
     }
@@ -287,6 +291,7 @@ export class VehiclesService {
       model: vehicle.model,
       sub_model: vehicle.sub_model ?? null,
       mileage: vehicle.mileage ?? null,
+      mileage_out: vehicle.mileage_out ?? null,
       vin,
       license_plate: licensePlate,
       created_at: this.toIsoString(
@@ -383,6 +388,7 @@ export class VehiclesService {
           model: 1,
           sub_model: 1,
           mileage: 1,
+          mileage_out: 1,
           vin: 1,
           license_plate: 1,
           created_at: 1,
@@ -454,6 +460,7 @@ export class VehiclesService {
       model: typeof raw.model === 'string' ? raw.model : '',
       sub_model: typeof raw.sub_model === 'string' ? raw.sub_model : null,
       mileage: typeof raw.mileage === 'number' ? raw.mileage : null,
+      mileage_out: typeof raw.mileage_out === 'number' ? raw.mileage_out : null,
       vin,
       license_plate: licensePlate,
       customer_name: customerName,

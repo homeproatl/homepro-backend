@@ -254,6 +254,7 @@ export class CustomersService {
       model: vehicle.model,
       sub_model: vehicle.sub_model ?? null,
       mileage: vehicle.mileage ?? null,
+      mileage_out: vehicle.mileage_out ?? null,
       vin: vehicle.vin,
       license_plate: vehicle.license_plate,
       created_at: this.toIsoString(

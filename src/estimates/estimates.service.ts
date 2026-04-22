@@ -19,6 +19,7 @@ import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot
 import { EstimateDataService } from './estimate-data.service';
 import { EstimateDomainService } from './estimate-domain.service';
 import { EstimateInvoiceService } from './estimate-invoice.service';
+import { resolveEstimateTotals } from '../common/calculators/estimate-calculators';
 import { serializeEmbeddedTags } from '../tags/tag-serialization';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { ListEstimatesQueryDto } from './dto/list-estimates-query.dto';
@@ -90,6 +91,9 @@ type EstimateListRecord = {
   due_date?: Date | string | null;
   labor_total?: number;
   parts_total?: number;
+  subtotal?: number;
+  tax_rate?: number;
+  tax_amount?: number;
   total?: number;
   created_at?: Date | string | null;
   updated_at?: Date | string | null;
@@ -940,8 +944,36 @@ export class EstimatesService {
     const dueDate = rawEstimate.due_date
       ? new Date(rawEstimate.due_date as string | Date)
       : null;
-    const total =
-      typeof rawEstimate.total === 'number' ? rawEstimate.total : 0;
+    const estimateTotals = resolveEstimateTotals(
+      {
+        labor_total:
+          typeof rawEstimate.labor_total === 'number'
+            ? rawEstimate.labor_total
+            : 0,
+        parts_total:
+          typeof rawEstimate.parts_total === 'number'
+            ? rawEstimate.parts_total
+            : 0,
+        subtotal:
+          typeof rawEstimate.subtotal === 'number'
+            ? rawEstimate.subtotal
+            : undefined,
+        tax_rate:
+          typeof rawEstimate.tax_rate === 'number'
+            ? rawEstimate.tax_rate
+            : undefined,
+        tax_amount:
+          typeof rawEstimate.tax_amount === 'number'
+            ? rawEstimate.tax_amount
+            : undefined,
+        total:
+          typeof rawEstimate.total === 'number'
+            ? rawEstimate.total
+            : undefined,
+      },
+      { applyDefaultTaxWhenMissing: true },
+    );
+    const total = estimateTotals.total;
     const paymentStatus = rawEstimate.payment_status as PaidStatus;
     const amountPaid = this.resolveAmountPaid(
       rawEstimate.amount_paid as number | undefined,
@@ -1009,14 +1041,11 @@ export class EstimatesService {
           | null
           | undefined,
       ),
-      labor_total:
-        typeof rawEstimate.labor_total === 'number'
-          ? rawEstimate.labor_total
-          : 0,
-      parts_total:
-        typeof rawEstimate.parts_total === 'number'
-          ? rawEstimate.parts_total
-          : 0,
+      labor_total: estimateTotals.labor_total,
+      parts_total: estimateTotals.parts_total,
+      subtotal: estimateTotals.subtotal,
+      tax_rate: estimateTotals.tax_rate,
+      tax_amount: estimateTotals.tax_amount,
       total,
       created_at: this.toIsoString(
         rawEstimate.created_at as Date | string | null | undefined,
@@ -1035,8 +1064,18 @@ export class EstimatesService {
     billingSummary?: EstimateBillingSummary,
   ) {
     const dueDate = rawEstimate.due_date ? new Date(rawEstimate.due_date) : null;
-    const total =
-      typeof rawEstimate.total === 'number' ? rawEstimate.total : 0;
+    const estimateTotals = resolveEstimateTotals(
+      {
+        labor_total: rawEstimate.labor_total,
+        parts_total: rawEstimate.parts_total,
+        subtotal: rawEstimate.subtotal,
+        tax_rate: rawEstimate.tax_rate,
+        tax_amount: rawEstimate.tax_amount,
+        total: rawEstimate.total,
+      },
+      { applyDefaultTaxWhenMissing: true },
+    );
+    const total = estimateTotals.total;
     const paymentStatus =
       (rawEstimate.payment_status as PaidStatus | undefined) ??
       PaidStatus.UNPAID;
@@ -1106,14 +1145,11 @@ export class EstimatesService {
       due_date: this.toIsoString(
         rawEstimate.due_date as Date | string | null | undefined,
       ),
-      labor_total:
-        typeof rawEstimate.labor_total === 'number'
-          ? rawEstimate.labor_total
-          : 0,
-      parts_total:
-        typeof rawEstimate.parts_total === 'number'
-          ? rawEstimate.parts_total
-          : 0,
+      labor_total: estimateTotals.labor_total,
+      parts_total: estimateTotals.parts_total,
+      subtotal: estimateTotals.subtotal,
+      tax_rate: estimateTotals.tax_rate,
+      tax_amount: estimateTotals.tax_amount,
       total,
       created_at: this.toIsoString(
         rawEstimate.created_at as Date | string | null | undefined,
@@ -1339,18 +1375,32 @@ export class EstimatesService {
 
     const billingSummaries =
       await this.estimateInvoiceService.getEstimateBillingSummariesForList(
-        estimates.map((estimate) => ({
-          estimate_id: this.serializeId(estimate._id, 'estimate id'),
-          customer_id: this.serializeId(estimate.customer_id, 'customer id'),
-          total: typeof estimate.total === 'number' ? estimate.total : 0,
-          services_count:
-            typeof estimate.services_count === 'number'
-              ? estimate.services_count
-              : 0,
-          payment_status: estimate.payment_status ?? PaidStatus.UNPAID,
-          amount_paid:
-            typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0,
-        })),
+        estimates.map((estimate) => {
+          const estimateTotals = resolveEstimateTotals(
+            {
+              labor_total: estimate.labor_total,
+              parts_total: estimate.parts_total,
+              subtotal: estimate.subtotal,
+              tax_rate: estimate.tax_rate,
+              tax_amount: estimate.tax_amount,
+              total: estimate.total,
+            },
+            { applyDefaultTaxWhenMissing: true },
+          );
+
+          return {
+            estimate_id: this.serializeId(estimate._id, 'estimate id'),
+            customer_id: this.serializeId(estimate.customer_id, 'customer id'),
+            total: estimateTotals.total,
+            services_count:
+              typeof estimate.services_count === 'number'
+                ? estimate.services_count
+                : 0,
+            payment_status: estimate.payment_status ?? PaidStatus.UNPAID,
+            amount_paid:
+              typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0,
+          };
+        }),
       );
 
     return estimates.map((estimate) =>
@@ -1384,6 +1434,9 @@ export class EstimatesService {
             due_date: 1,
             labor_total: 1,
             parts_total: 1,
+            subtotal: 1,
+            tax_rate: 1,
+            tax_amount: 1,
             total: 1,
             created_at: 1,
             updated_at: 1,
@@ -1569,6 +1622,9 @@ export class EstimatesService {
           due_date: 1,
           labor_total: 1,
           parts_total: 1,
+          subtotal: 1,
+          tax_rate: 1,
+          tax_amount: 1,
           total: 1,
           created_at: 1,
           updated_at: 1,

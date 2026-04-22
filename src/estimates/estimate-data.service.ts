@@ -146,6 +146,9 @@ export class EstimateDataService {
       services: prepared.services,
       labor_total: prepared.labor_total,
       parts_total: prepared.parts_total,
+      subtotal: prepared.subtotal,
+      tax_rate: prepared.tax_rate,
+      tax_amount: prepared.tax_amount,
       total: prepared.total,
     });
   }
@@ -176,6 +179,9 @@ export class EstimateDataService {
     estimate.services = prepared.services;
     estimate.labor_total = prepared.labor_total;
     estimate.parts_total = prepared.parts_total;
+    estimate.subtotal = prepared.subtotal;
+    estimate.tax_rate = prepared.tax_rate;
+    estimate.tax_amount = prepared.tax_amount;
     estimate.total = prepared.total;
 
     await estimate.save();
