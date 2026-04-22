@@ -151,6 +151,18 @@ function formatVehicleDisplayName(invoice: InvoiceDocumentModel) {
   return makeModel ? `${yearPrefix}${makeModel}` : invoice.vehicleLabel;
 }
 
+function normalizeOptionalInvoiceText(value: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const placeholderValues = new Set(['-', '—', '--', 'n/a', 'na', 'none']);
+
+  return placeholderValues.has(normalized) ? null : trimmed;
+}
+
 function renderInvoiceLogo(input: {
   src: string;
   alt: string;
@@ -256,6 +268,44 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
     .join('');
 }
 
+function renderInvoiceNoteSection(title: string, value: string) {
+  return `
+    <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;letter-spacing:0.08em;">${escapeHtml(title)}</p>
+    <p style="margin:4px 0 0;font-size:12px;color:#334155;white-space:pre-line;">${escapeHtml(value)}</p>
+  `;
+}
+
+function renderInvoiceNotes(invoice: InvoiceDocumentModel) {
+  const customerComment = normalizeOptionalInvoiceText(invoice.customerComment);
+  const recommendation = normalizeOptionalInvoiceText(invoice.recommendation);
+
+  if (!customerComment && !recommendation) {
+    return '';
+  }
+
+  if (customerComment && recommendation) {
+    return `
+      <div style="border-top:1px solid #e2e8f0;margin-top:20px;padding-top:16px;" class="note-grid">
+        <div class="note-col" style="padding-right:12px;">
+          ${renderInvoiceNoteSection('CUSTOMER COMMENT', customerComment)}
+        </div>
+        <div class="note-col-right" style="padding-left:12px;">
+          ${renderInvoiceNoteSection('RECOMMENDATION', recommendation)}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="border-top:1px solid #e2e8f0;margin-top:20px;padding-top:16px;">
+      ${renderInvoiceNoteSection(
+        customerComment ? 'CUSTOMER COMMENT' : 'RECOMMENDATION',
+        customerComment ?? recommendation ?? '',
+      )}
+    </div>
+  `;
+}
+
 export function renderInvoiceDocumentHtml(
   invoice: InvoiceDocumentModel,
   options: { logoSrc?: string } = {},
@@ -272,6 +322,7 @@ export function renderInvoiceDocumentHtml(
   const paidLabel =
     invoice.paymentStatus === 'PART_PAID' ? 'Part paid' : 'Amount paid';
   const lineItemsTable = renderInvoiceLineItemsTable(invoice.services);
+  const noteSections = renderInvoiceNotes(invoice);
   const businessName = 'GMB Auto';
   const businessAddressLine1 = '301 Elmont Rd';
   const businessAddressLine2 = 'Elmont, NY 11003';
@@ -453,20 +504,7 @@ export function renderInvoiceDocumentHtml(
           </div>
         </div>
 
-        <div style="border-top:1px solid #e2e8f0;margin-top:20px;padding-top:16px;" class="note-grid">
-          <div class="note-col" style="padding-right:12px;">
-            <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;letter-spacing:0.08em;">CUSTOMER COMMENT</p>
-            <p style="margin:4px 0 0;font-size:12px;color:#334155;white-space:pre-line;">${escapeHtml(
-              invoice.customerComment ?? '—',
-            )}</p>
-          </div>
-          <div class="note-col-right" style="padding-left:12px;">
-            <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;letter-spacing:0.08em;">RECOMMENDATION</p>
-            <p style="margin:4px 0 0;font-size:12px;color:#334155;white-space:pre-line;">${escapeHtml(
-              invoice.recommendation ?? '—',
-            )}</p>
-          </div>
-        </div>
+        ${noteSections}
 
         <div style="margin-top:20px;">
           ${lineItemsTable}

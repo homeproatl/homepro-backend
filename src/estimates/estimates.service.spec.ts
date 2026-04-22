@@ -9,19 +9,31 @@ import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot
 import { EstimatesService } from './estimates.service';
 
 describe('EstimatesService', () => {
-  function createListEstimateModel(records: Array<Record<string, unknown>>) {
+  function createListEstimateModel(
+    records: Array<Record<string, unknown>>,
+    options?: {
+      invoiceSnapshotRecords?: Array<Record<string, unknown>>;
+    },
+  ) {
     const aggregateExec = jest.fn().mockResolvedValue(records);
     const aggregate = jest.fn().mockReturnValue({ exec: aggregateExec });
-    const collectionFind = jest.fn().mockReturnValue({
-      toArray: jest.fn().mockResolvedValue([]),
+    const invoiceSnapshotFind = jest.fn().mockReturnValue({
+      toArray: jest
+        .fn()
+        .mockResolvedValue(options?.invoiceSnapshotRecords ?? []),
     });
 
     return {
       aggregate,
       db: {
-        collection: jest.fn().mockReturnValue({
-          find: collectionFind,
-        }),
+        collection: jest.fn((name: string) => ({
+          find:
+            name === 'estimate_invoice_snapshots'
+              ? invoiceSnapshotFind
+              : jest.fn().mockReturnValue({
+                  toArray: jest.fn().mockResolvedValue([]),
+                }),
+        })),
       },
     };
   }
@@ -51,6 +63,7 @@ describe('EstimatesService', () => {
         getEstimateBillingSummariesForList: jest
           .fn()
           .mockResolvedValue(new Map()),
+        isInvoiceSendRuntimeReady: jest.fn().mockResolvedValue(true),
         getInvoiceHistoryCounts: jest.fn().mockResolvedValue({
           snapshotCount: 0,
           dispatchCount: 0,
@@ -172,6 +185,133 @@ describe('EstimatesService', () => {
       send_ready: true,
     });
     expect(result[0]).not.toHaveProperty('_id');
+  });
+
+  it('finds estimates by any tracked invoice number in the filtered list', async () => {
+    const estimateModel = createListEstimateModel(
+      [
+        {
+          _id: 'estimate-1',
+          estimate_number: 'RBNTPT',
+          title: 'Brake Estimate',
+          customer_id: '507f1f77bcf86cd799439011',
+          vehicle_id: '507f1f77bcf86cd799439012',
+          estimate_status: EstimateStatus.SCHEDULED,
+          payment_status: PaidStatus.UNPAID,
+          payment_type: 'POS_CARD',
+          due_date: null,
+          labor_total: 100,
+          parts_total: 50,
+          total: 150,
+          services_count: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      {
+        invoiceSnapshotRecords: [
+          {
+            estimate_id: 'estimate-1',
+            invoice_number: 'RBNTPT-R2',
+          },
+        ],
+      },
+    );
+    const getEstimateBillingSummariesForList = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'estimate-1',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
+            latest_invoice_number: 'RBNTPT-R3',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          },
+        ],
+      ]),
+    );
+
+    const service = createService({
+      estimateModel,
+      estimateInvoiceService: { getEstimateBillingSummariesForList },
+    });
+
+    await expect(
+      service.findAll({
+        search: 'RBNTPT-R2',
+      }),
+    ).resolves.toMatchObject([
+      {
+        id: 'estimate-1',
+        estimate_number: 'RBNTPT',
+        latest_invoice_number: 'RBNTPT-R3',
+      },
+    ]);
+  });
+
+  it('adds invoice-number matching to the paginated estimates search pipeline', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      search: 'RBNTPT-R2',
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [Array<Record<string, unknown>>];
+    const matchingInvoiceLookup = pipeline.find(
+      (stage) =>
+        '$lookup' in stage &&
+        (stage.$lookup as { as?: string }).as === 'matching_invoice_snapshot',
+    ) as
+      | {
+          $lookup: {
+            pipeline: Array<Record<string, unknown>>;
+          };
+        }
+      | undefined;
+    const searchMatchStage = pipeline.find(
+      (stage) =>
+        '$match' in stage &&
+        Array.isArray((stage.$match as { $or?: unknown[] }).$or),
+    ) as
+      | {
+          $match: {
+            $or: Array<Record<string, unknown>>;
+          };
+        }
+      | undefined;
+    const matchingInvoiceRegex = (
+      matchingInvoiceLookup?.$lookup.pipeline[0] as {
+        $match?: {
+          $expr?: {
+            $and?: Array<{
+              $regexMatch?: {
+                regex?: RegExp | string;
+              };
+            }>;
+          };
+        };
+      }
+    )?.$match?.$expr?.$and?.[1]?.$regexMatch?.regex;
+
+    expect(matchingInvoiceLookup).toBeDefined();
+    expect(String(matchingInvoiceRegex)).toBe('/RBNTPT-R2/i');
+    expect(searchMatchStage?.$match.$or).toEqual(
+      expect.arrayContaining([
+        { latest_invoice_number: /RBNTPT-R2/i },
+        { matching_invoice_number: { $ne: null } },
+      ]),
+    );
   });
 
   it('returns backend-derived admin invoice workflow labels on estimate rows', async () => {

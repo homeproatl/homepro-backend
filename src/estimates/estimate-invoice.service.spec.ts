@@ -25,6 +25,111 @@ describe('EstimateInvoiceService', () => {
     );
   }
 
+  function createInvoicePayload(overrides?: Record<string, unknown>) {
+    return {
+      estimate_id: 'estimate-1',
+      customer_snapshot: {
+        customer_id: 'customer-1',
+        name: 'Rico Customer',
+        email: 'customer@test.com',
+        phone: '555-0100',
+      },
+      vehicle_snapshot: {
+        vehicle_id: 'vehicle-1',
+        label: '2003 HONDA Civic',
+        vin: '2HGES165X3H619036',
+        license_plate: 'FRD45FG',
+        year: 2003,
+        make: 'HONDA',
+        model: 'Civic',
+        mileage: 183368,
+        mileage_out: 183368,
+      },
+      services_snapshot: [
+        {
+          name: 'Brake Service',
+          note: null,
+          labor_lines: [],
+          part_lines: [],
+          labor_total: 100,
+          parts_total: 0,
+          total: 100,
+        },
+      ],
+      estimate_number_snapshot: 'EST-001',
+      title_snapshot: 'Brake Service',
+      time_zone_snapshot: 'America/New_York',
+      complaint_or_request_snapshot: null,
+      recommendation_snapshot: null,
+      subtotal_snapshot: 100,
+      tax_rate_snapshot: 8.875,
+      tax_amount_snapshot: 8.88,
+      total: 108.88,
+      amount_paid_snapshot: 0,
+      amount_remaining_snapshot: 108.88,
+      payment_status_snapshot: 'UNPAID',
+      payment_type_snapshot: 'POS_CARD',
+      due_date_snapshot: null,
+      scheduled_start_snapshot: null,
+      scheduled_end_snapshot: null,
+      generated_at: '2026-04-22T12:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function createSnapshotDocument(overrides?: Record<string, unknown>) {
+    const raw = {
+      ...createInvoicePayload(),
+      _id: 'snapshot-1',
+      estimate_id: 'estimate-1',
+      invoice_number: 'EST-001-R2',
+      revision_number: 2,
+      status: 'ISSUED',
+      billable_hash: 'hash-1',
+      issued_at: '2026-04-22T12:00:00.000Z',
+      sent_at: null,
+      stale_at: null,
+      superseded_by_snapshot_id: null,
+      created_at: '2026-04-22T12:00:00.000Z',
+      updated_at: '2026-04-22T12:00:00.000Z',
+      ...overrides,
+    };
+
+    return {
+      _id: raw._id,
+      estimate_id: raw.estimate_id,
+      invoice_number: raw.invoice_number,
+      revision_number: raw.revision_number,
+      status: raw.status,
+      sent_at: raw.sent_at,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: () => raw,
+    };
+  }
+
+  function createDispatchDocument() {
+    const raw = {
+      _id: 'dispatch-1',
+      estimate_id: 'estimate-1',
+      invoice_snapshot_id: 'snapshot-1',
+      recipient_email: 'customer@test.com',
+      provider: 'resend',
+      provider_message_id: null,
+      provider_request_key: 'invoice:snapshot-1:request',
+      delivery_status: 'PENDING',
+      error_message: null,
+      sent_at: null,
+      created_at: '2026-04-22T12:00:00.000Z',
+      updated_at: '2026-04-22T12:00:00.000Z',
+    };
+
+    return {
+      ...raw,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: () => raw,
+    };
+  }
+
   it('recomputes revision numbers when snapshot creation retries after a duplicate-key conflict', async () => {
     const findOne = jest
       .fn()
@@ -79,15 +184,214 @@ describe('EstimateInvoiceService', () => {
 
     expect(create).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ revision_number: 4 }),
+      expect.objectContaining({
+        invoice_number: 'EST-001-R4',
+        revision_number: 4,
+      }),
     );
     expect(create).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ revision_number: 5 }),
+      expect.objectContaining({
+        invoice_number: 'EST-001-R5',
+        revision_number: 5,
+      }),
     );
   });
 
-  it('does not treat LOG transport as a successful email delivery', async () => {
+  it('uses the estimate number as the first issued invoice number', async () => {
+    const findOne = jest.fn().mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      }),
+    });
+    const create = jest.fn().mockResolvedValue({ id: 'snapshot-1' });
+    const service = createService({
+      estimateInvoiceSnapshotModel: {
+        findOne,
+        create,
+      },
+    });
+
+    await (
+      service as unknown as {
+        createSnapshot: (aggregate: unknown) => Promise<void>;
+      }
+    ).createSnapshot({
+      estimate: { _id: 'estimate-1' },
+      payload: {
+        customer_snapshot: {},
+        vehicle_snapshot: {},
+        services_snapshot: [],
+        estimate_number_snapshot: 'rbntpt',
+        title_snapshot: 'Inspection',
+        time_zone_snapshot: 'America/New_York',
+        subtotal_snapshot: 100,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
+        total: 108.88,
+        payment_status_snapshot: 'UNPAID',
+        payment_type_snapshot: 'POS_CARD',
+        due_date_snapshot: null,
+        scheduled_start_snapshot: null,
+        scheduled_end_snapshot: null,
+      },
+      billableHash: 'hash-1',
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice_number: 'RBNTPT',
+        revision_number: 1,
+      }),
+    );
+  });
+
+  it('renders sent invoice PDFs from the issued snapshot number', async () => {
+    const snapshot = createSnapshotDocument({
+      invoice_number: 'EST-001-R2',
+      revision_number: 2,
+    });
+    const dispatch = createDispatchDocument();
+    const aggregate = {
+      estimate: { _id: 'estimate-1' },
+      customer: {
+        email: 'customer@test.com',
+        first_name: 'Rico',
+        last_name: 'Customer',
+      },
+      vehicle: {},
+      payload: createInvoicePayload({
+        estimate_number_snapshot: 'EST-001',
+      }),
+      blockers: [],
+      billableHash: 'hash-1',
+    };
+    const service = createService({
+      estimateInvoiceDispatchModel: {
+        create: jest.fn().mockResolvedValue(dispatch),
+      },
+    });
+    const serviceInternals = service as unknown as {
+      loadInvoiceAggregate: (estimateId: string) => Promise<unknown>;
+      getGlobalInvoiceRuntimeReadiness: () => Promise<{
+        pdfBlockers: string[];
+        sendBlockers: string[];
+      }>;
+      resolveIssueableSnapshot: (
+        aggregate: unknown,
+        actorUserId?: string,
+      ) => Promise<unknown>;
+      getLatestDispatchForSnapshot: (snapshotId: unknown) => Promise<unknown>;
+      getInvoiceProviderName: () => string;
+      createInvoiceDispatchRequestKey: (snapshotId: unknown) => string;
+      renderInvoicePdf: (invoice: unknown) => Promise<Uint8Array>;
+      sendInvoiceEmail: (input: {
+        invoiceNumber: string;
+        pdfBytes: Uint8Array;
+      }) => Promise<{ provider: string; providerMessageId: string }>;
+      recordAudit: (input: unknown) => Promise<void>;
+    };
+    const renderInvoicePdf = jest
+      .spyOn(serviceInternals, 'renderInvoicePdf')
+      .mockResolvedValue(Uint8Array.of(1, 2, 3));
+    const sendInvoiceEmail = jest
+      .spyOn(serviceInternals, 'sendInvoiceEmail')
+      .mockResolvedValue({
+        provider: 'resend',
+        providerMessageId: 'message-1',
+      });
+
+    jest
+      .spyOn(serviceInternals, 'loadInvoiceAggregate')
+      .mockResolvedValue(aggregate);
+    jest
+      .spyOn(serviceInternals, 'getGlobalInvoiceRuntimeReadiness')
+      .mockResolvedValue({ pdfBlockers: [], sendBlockers: [] });
+    jest
+      .spyOn(serviceInternals, 'resolveIssueableSnapshot')
+      .mockResolvedValue(snapshot);
+    jest
+      .spyOn(serviceInternals, 'getLatestDispatchForSnapshot')
+      .mockResolvedValue(null);
+    jest
+      .spyOn(serviceInternals, 'getInvoiceProviderName')
+      .mockReturnValue('resend');
+    jest
+      .spyOn(serviceInternals, 'createInvoiceDispatchRequestKey')
+      .mockReturnValue('invoice:snapshot-1:request');
+    jest.spyOn(serviceInternals, 'recordAudit').mockResolvedValue(undefined);
+
+    await service.sendInvoice('estimate-1', 'user-1');
+
+    expect(renderInvoicePdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice_number: 'EST-001-R2',
+        estimate_number_snapshot: 'EST-001',
+      }),
+    );
+    expect(sendInvoiceEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceNumber: 'EST-001-R2',
+        pdfBytes: Uint8Array.of(1, 2, 3),
+      }),
+    );
+  });
+
+  it('issues a tracked snapshot before rendering printable invoice PDFs', async () => {
+    const snapshot = createSnapshotDocument({ invoice_number: 'EST-001' });
+    const aggregate = {
+      estimate: { _id: 'estimate-1', estimate_number: 'EST-001' },
+      customer: { email: null },
+      vehicle: {},
+      payload: createInvoicePayload(),
+      blockers: [
+        'Customer email is required before an invoice can be issued or sent.',
+      ],
+      billableHash: 'hash-1',
+    };
+    const service = createService();
+    const serviceInternals = service as unknown as {
+      loadInvoiceAggregate: (estimateId: string) => Promise<unknown>;
+      getGlobalInvoiceRuntimeReadiness: () => Promise<{
+        pdfBlockers: string[];
+        sendBlockers: string[];
+      }>;
+      resolveIssueableSnapshot: (
+        aggregate: unknown,
+        actorUserId: string | undefined,
+        options: { blockers: string[] },
+      ) => Promise<unknown>;
+      renderInvoicePdf: (invoice: unknown) => Promise<Uint8Array>;
+    };
+    const resolveIssueableSnapshot = jest
+      .spyOn(serviceInternals, 'resolveIssueableSnapshot')
+      .mockResolvedValue(snapshot);
+    const renderInvoicePdf = jest
+      .spyOn(serviceInternals, 'renderInvoicePdf')
+      .mockResolvedValue(Uint8Array.of(4, 5, 6));
+
+    jest
+      .spyOn(serviceInternals, 'loadInvoiceAggregate')
+      .mockResolvedValue(aggregate);
+    jest
+      .spyOn(serviceInternals, 'getGlobalInvoiceRuntimeReadiness')
+      .mockResolvedValue({ pdfBlockers: [], sendBlockers: [] });
+
+    const result = await service.getInvoicePdf('estimate-1');
+
+    expect(resolveIssueableSnapshot).toHaveBeenCalledWith(aggregate, undefined, {
+      blockers: [],
+    });
+    expect(renderInvoicePdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice_number: 'EST-001',
+      }),
+    );
+    expect(result.fileName).toBe('EST-001.pdf');
+    expect(result.buffer).toEqual(Buffer.from(Uint8Array.of(4, 5, 6)));
+  });
+
+  it('does not treat LOG transport as a successful email delivery', () => {
     const service = createService({
       configService: {
         get: jest.fn((key: string) => {
@@ -211,14 +515,30 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Amount due');
   });
 
+  it('uses the estimate number instead of a Preview placeholder for live invoice previews', () => {
+    const service = createService();
+
+    expect(
+      (
+        service as unknown as {
+          getInvoiceDocumentLabel: (input: {
+            estimate_number_snapshot: string;
+          }) => string;
+        }
+      ).getInvoiceDocumentLabel({
+        estimate_number_snapshot: 'RBNTPT',
+      }),
+    ).toBe('RBNTPT');
+  });
+
   it('renders invoice pdf html with document metadata, line item table, and totals summary', () => {
     const html = renderInvoiceDocumentHtml({
       invoiceNumber: 'INV-123456',
       estimateNumber: 'EST-001',
       title: 'Brake Service',
       timeZone: 'America/New_York',
-      customerComment: null,
-      recommendation: null,
+      customerComment: 'Customer hears grinding when braking.',
+      recommendation: 'Replace front brake pads.',
       customerName: 'Rico Customer',
       customerEmail: 'customer@test.com',
       customerPhone: '555-0100',
@@ -288,7 +608,9 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Mileage In: 183,368 mi');
     expect(html).toContain('Mileage Out: 183,500 mi');
     expect(html).toContain('CUSTOMER COMMENT');
+    expect(html).toContain('Customer hears grinding when braking.');
     expect(html).toContain('RECOMMENDATION');
+    expect(html).toContain('Replace front brake pads.');
     expect(html).toContain('Rate / hr');
     expect(html).toContain('Part used');
     expect(html).toContain('Labor subtotal');
@@ -303,6 +625,60 @@ describe('EstimateInvoiceService', () => {
       'background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;',
     );
     expect(html).toContain('M Rico');
+  });
+
+  it('omits customer comment and recommendation sections when invoice notes are empty', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-000111',
+      estimateNumber: 'EST-EMPTY-NOTES',
+      title: 'Oil Service',
+      timeZone: 'America/New_York',
+      customerComment: '   ',
+      recommendation: '—',
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'FRD45FG · Honda Civic',
+      vehicleVin: '2HGES165X3H619036',
+      vehiclePlate: 'FRD45FG',
+      vehicleYear: 2003,
+      vehicleMake: 'Honda',
+      vehicleModel: 'Civic',
+      vehicleMileage: 183368,
+      vehicleMileageOut: 183500,
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'UNPAID',
+      paymentType: 'POS_CARD',
+      subTotal: 100,
+      taxRate: 0,
+      taxAmount: 0,
+      total: 100,
+      amountPaid: 0,
+      amountRemaining: 100,
+      services: [
+        {
+          name: 'Oil Service',
+          note: null,
+          laborTotal: 100,
+          partsTotal: 0,
+          total: 100,
+          laborLines: [
+            {
+              description: 'Oil change labor',
+              hours: 1,
+              rate: 100,
+              subTotal: 100,
+            },
+          ],
+          partLines: [],
+        },
+      ],
+      mode: 'preview',
+    });
+
+    expect(html).not.toContain('CUSTOMER COMMENT');
+    expect(html).not.toContain('RECOMMENDATION');
   });
 
   it('renders a paid amount row for part-paid invoices so the remaining balance is visually explained', () => {

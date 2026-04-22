@@ -212,6 +212,28 @@ const PUBLIC_MAILBOX_DOMAINS = new Set([
 ]);
 
 const RECENT_INVOICE_DISPATCH_WINDOW_MS = 2 * 60 * 1000;
+const EMPTY_INVOICE_NOTE_VALUES = new Set(['-', '—', '--', 'n/a', 'na', 'none']);
+const CUSTOMER_EMAIL_INVOICE_BLOCKER =
+  'Customer email is required before an invoice can be issued or sent.';
+const BILLABLE_INVOICE_BLOCKER =
+  'Add at least one billable line before issuing an invoice.';
+const PART_PAID_INVOICE_BLOCKER =
+  'Part-paid invoices require a paid amount greater than zero before sending.';
+
+function normalizeInvoiceOptionalText(value: unknown) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return EMPTY_INVOICE_NOTE_VALUES.has(trimmed.toLowerCase())
+    ? null
+    : trimmed;
+}
 
 @Injectable()
 export class EstimateInvoiceService implements OnModuleDestroy {
@@ -387,23 +409,17 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         const blockers: string[] = [];
 
         if (!customerEmail) {
-          blockers.push(
-            'Customer email is required before an invoice can be issued or sent.',
-          );
+          blockers.push(CUSTOMER_EMAIL_INVOICE_BLOCKER);
         }
 
         if (estimate.total <= 0 && estimate.services_count === 0) {
-          blockers.push(
-            'Add at least one billable line before issuing an invoice.',
-          );
+          blockers.push(BILLABLE_INVOICE_BLOCKER);
         }
         if (
           estimate.payment_status === PaidStatus.PART_PAID &&
           estimate.amount_paid <= 0
         ) {
-          blockers.push(
-            'Part-paid invoices require a paid amount greater than zero before sending.',
-          );
+          blockers.push(PART_PAID_INVOICE_BLOCKER);
         }
 
         const latestSnapshot =
@@ -564,18 +580,18 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     }
 
     try {
-      // Keep send output visually identical to the live preview/download render source.
-      const renderPayload = aggregate.payload;
+      // Sent attachments must render the immutable issued snapshot number.
+      const renderPayload = this.serializeSnapshot(snapshot);
       const pdfBytes = await this.renderInvoicePdf(renderPayload);
       const emailMessage = this.toInvoiceEmailMessageModel({
         invoiceNumber: snapshot.invoice_number,
         customerName: aggregate.customer.first_name
           ? `${aggregate.customer.first_name} ${aggregate.customer.last_name}`.trim()
-          : aggregate.payload.customer_snapshot.name,
-        estimateNumber: aggregate.payload.estimate_number_snapshot,
-        total: aggregate.payload.amount_remaining_snapshot,
-        dueDate: aggregate.payload.due_date_snapshot,
-        timeZone: aggregate.payload.time_zone_snapshot,
+          : renderPayload.customer_snapshot.name,
+        estimateNumber: renderPayload.estimate_number_snapshot,
+        total: renderPayload.amount_remaining_snapshot,
+        dueDate: renderPayload.due_date_snapshot,
+        timeZone: renderPayload.time_zone_snapshot,
       });
       const result = await this.sendInvoiceEmail({
         invoiceNumber: snapshot.invoice_number,
@@ -655,20 +671,20 @@ export class EstimateInvoiceService implements OnModuleDestroy {
 
   async getInvoicePdf(estimateId: string) {
     const aggregate = await this.loadInvoiceAggregate(estimateId);
-    const latestSnapshot = await this.reconcileLatestSnapshot(aggregate);
-    const useLatestSnapshot =
-      latestSnapshot &&
-      latestSnapshot.status !== EstimateInvoiceSnapshotStatus.STALE &&
-      latestSnapshot.status !== EstimateInvoiceSnapshotStatus.VOID;
-    const source = useLatestSnapshot
-      ? this.serializeSnapshot(latestSnapshot)
-      : aggregate.payload;
+    const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
+    if (runtimeReadiness.pdfBlockers.length > 0) {
+      throw new ServiceUnavailableException(
+        runtimeReadiness.pdfBlockers.join(' '),
+      );
+    }
+    const snapshot = await this.resolveIssueableSnapshot(aggregate, undefined, {
+      blockers: this.getPrintableInvoiceBlockers(aggregate),
+    });
+    const source = this.serializeSnapshot(snapshot);
     const pdfBytes = await this.renderInvoicePdf(source);
 
     return {
-      fileName: useLatestSnapshot
-        ? `${latestSnapshot.invoice_number}.pdf`
-        : `${aggregate.estimate.estimate_number}-preview.pdf`,
+      fileName: `${snapshot.invoice_number}.pdf`,
       buffer: Buffer.from(pdfBytes),
     };
   }
@@ -775,8 +791,10 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       estimate_number_snapshot: estimate.estimate_number,
       title_snapshot: estimate.title,
       time_zone_snapshot: invoiceTimeZone,
-      complaint_or_request_snapshot: estimate.complaint_or_request ?? null,
-      recommendation_snapshot: estimate.notes ?? null,
+      complaint_or_request_snapshot: normalizeInvoiceOptionalText(
+        estimate.complaint_or_request,
+      ),
+      recommendation_snapshot: normalizeInvoiceOptionalText(estimate.notes),
       customer_snapshot: customerSnapshot,
       vehicle_snapshot: vehicleSnapshot,
       services_snapshot: servicesSnapshot,
@@ -800,22 +818,16 @@ export class EstimateInvoiceService implements OnModuleDestroy {
 
     const blockers: string[] = [];
     if (!customer.email) {
-      blockers.push(
-        'Customer email is required before an invoice can be issued or sent.',
-      );
+      blockers.push(CUSTOMER_EMAIL_INVOICE_BLOCKER);
     }
     if (estimate.total <= 0 && servicesSnapshot.length === 0) {
-      blockers.push(
-        'Add at least one billable line before issuing an invoice.',
-      );
+      blockers.push(BILLABLE_INVOICE_BLOCKER);
     }
     if (
       payload.payment_status_snapshot === PaidStatus.PART_PAID &&
       payload.amount_paid_snapshot <= 0
     ) {
-      blockers.push(
-        'Part-paid invoices require a paid amount greater than zero before sending.',
-      );
+      blockers.push(PART_PAID_INVOICE_BLOCKER);
     }
 
     return {
@@ -913,9 +925,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
   private async resolveIssueableSnapshot(
     aggregate: InvoiceAggregate,
     actorUserId?: string,
+    options?: { blockers?: string[] },
   ) {
-    if (aggregate.blockers.length > 0) {
-      throw new BadRequestException(aggregate.blockers.join(' '));
+    const blockers = options?.blockers ?? aggregate.blockers;
+    if (blockers.length > 0) {
+      throw new BadRequestException(blockers.join(' '));
     }
 
     const latestSnapshot = await this.reconcileLatestSnapshot(aggregate);
@@ -962,9 +976,13 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         const revisionNumber = latestSnapshot
           ? latestSnapshot.revision_number + 1
           : 1;
+        const invoiceNumber = this.getInvoiceSnapshotNumber(
+          aggregate.payload.estimate_number_snapshot,
+          revisionNumber,
+        );
         return await this.estimateInvoiceSnapshotModel.create({
           estimate_id: aggregate.estimate._id,
-          invoice_number: `INV-${generateOrderId()}`,
+          invoice_number: invoiceNumber,
           revision_number: revisionNumber,
           status: EstimateInvoiceSnapshotStatus.ISSUED,
           customer_snapshot: aggregate.payload.customer_snapshot,
@@ -1010,6 +1028,16 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     throw new ServiceUnavailableException(
       'Could not generate a unique invoice number. Please retry.',
     );
+  }
+
+  private getInvoiceSnapshotNumber(
+    estimateNumber: string,
+    revisionNumber: number,
+  ) {
+    const baseNumber = estimateNumber.trim().toUpperCase();
+    return revisionNumber === 1
+      ? baseNumber
+      : `${baseNumber}-R${revisionNumber}`;
   }
 
   private serializeSnapshot(
@@ -1089,14 +1117,12 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       billable_hash: raw.billable_hash,
       estimate_number_snapshot: raw.estimate_number_snapshot,
       title_snapshot: raw.title_snapshot,
-      complaint_or_request_snapshot:
-        typeof raw.complaint_or_request_snapshot === 'string'
-          ? raw.complaint_or_request_snapshot
-          : null,
-      recommendation_snapshot:
-        typeof raw.recommendation_snapshot === 'string'
-          ? raw.recommendation_snapshot
-          : null,
+      complaint_or_request_snapshot: normalizeInvoiceOptionalText(
+        raw.complaint_or_request_snapshot,
+      ),
+      recommendation_snapshot: normalizeInvoiceOptionalText(
+        raw.recommendation_snapshot,
+      ),
       customer_snapshot: raw.customer_snapshot as InvoiceCustomerSnapshot,
       vehicle_snapshot: raw.vehicle_snapshot as InvoiceVehicleSnapshot,
       services_snapshot: servicesSnapshot,
@@ -1289,7 +1315,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
   private getInvoiceDocumentLabel(invoice: InvoiceRenderPayload) {
     return 'invoice_number' in invoice && invoice.invoice_number
       ? invoice.invoice_number
-      : 'Preview';
+      : invoice.estimate_number_snapshot;
   }
 
   private getInvoiceServiceRows(invoice: InvoiceRenderPayload) {
@@ -1566,13 +1592,22 @@ export class EstimateInvoiceService implements OnModuleDestroy {
   ): Promise<InvoiceBillingReadiness> {
     const runtimeReadiness = await this.getGlobalInvoiceRuntimeReadiness();
     const aggregateBlockers = [...aggregate.blockers];
+    const printableBlockers = this.getPrintableInvoiceBlockers(aggregate);
 
     return {
-      pdfBlockers: runtimeReadiness.pdfBlockers,
+      pdfBlockers: Array.from(
+        new Set([...printableBlockers, ...runtimeReadiness.pdfBlockers]),
+      ),
       sendBlockers: Array.from(
         new Set([...aggregateBlockers, ...runtimeReadiness.sendBlockers]),
       ),
     };
+  }
+
+  private getPrintableInvoiceBlockers(aggregate: InvoiceAggregate) {
+    return aggregate.blockers.filter(
+      (blocker) => blocker !== CUSTOMER_EMAIL_INVOICE_BLOCKER,
+    );
   }
 
   private async renderInvoicePdf(invoice: InvoiceRenderPayload) {

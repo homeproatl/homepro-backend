@@ -1526,6 +1526,9 @@ export class EstimatesService {
     const estimatesWithBillingSummaries =
       await this.withBillingSummariesForList(estimates);
     const searchTerm = filters.search?.trim().toLowerCase() ?? '';
+    const matchingInvoiceEstimateIds = searchTerm
+      ? await this.findEstimateIdsByInvoiceSearch(searchTerm)
+      : null;
     const nowMs = Date.now();
     const sorted = estimatesWithBillingSummaries
       .filter((estimate) => {
@@ -1566,6 +1569,10 @@ export class EstimatesService {
           return true;
         }
 
+        if (matchingInvoiceEstimateIds?.has(estimate.id)) {
+          return true;
+        }
+
         const scheduleText = `${estimate.scheduled_start ?? ''} ${
           estimate.scheduled_end ?? ''
         }`;
@@ -1603,6 +1610,9 @@ export class EstimatesService {
     const sendRuntimeReady =
       await this.estimateInvoiceService.isInvoiceSendRuntimeReady();
     const searchTerm = filters.search?.trim();
+    const searchRegex = searchTerm
+      ? new RegExp(this.escapeRegex(searchTerm), 'i')
+      : null;
     const pipeline: PipelineStage[] = [
       { $match: query },
       {
@@ -1698,11 +1708,55 @@ export class EstimatesService {
           as: 'latest_snapshot',
         },
       },
+      ...(searchRegex
+        ? [
+            {
+              $lookup: {
+                from: 'estimate_invoice_snapshots',
+                let: { estimateId: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$estimate_id', '$$estimateId'] },
+                          {
+                            $regexMatch: {
+                              input: '$invoice_number',
+                              regex: searchRegex,
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $project: {
+                      invoice_number: 1,
+                    },
+                  },
+                  { $limit: 1 },
+                ],
+                as: 'matching_invoice_snapshot',
+              },
+            },
+          ]
+        : []),
       {
         $addFields: {
           customer: { $first: '$customer' },
           vehicle: { $first: '$vehicle' },
           latest_snapshot: { $first: '$latest_snapshot' },
+          ...(searchRegex
+            ? {
+                matching_invoice_number: {
+                  $ifNull: [
+                    { $first: '$matching_invoice_snapshot.invoice_number' },
+                    null,
+                  ],
+                },
+              }
+            : {}),
           scheduled_start_text: {
             $cond: [
               { $ne: ['$scheduled_start', null] },
@@ -1895,12 +1949,13 @@ export class EstimatesService {
       });
     }
 
-    if (searchTerm) {
-      const searchRegex = new RegExp(this.escapeRegex(searchTerm), 'i');
+    if (searchRegex) {
       pipeline.push({
         $match: {
           $or: [
             { estimate_number: searchRegex },
+            { latest_invoice_number: searchRegex },
+            { matching_invoice_number: { $ne: null } },
             { title: searchRegex },
             { customer_first_name: searchRegex },
             { customer_last_name: searchRegex },
@@ -2120,6 +2175,25 @@ export class EstimatesService {
 
   private escapeRegex(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async findEstimateIdsByInvoiceSearch(searchTerm: string) {
+    const searchRegex = new RegExp(this.escapeRegex(searchTerm), 'i');
+    const records = await this.estimateModel.db
+      .collection('estimate_invoice_snapshots')
+      .find({
+        invoice_number: searchRegex,
+      })
+      .toArray();
+
+    return new Set(
+      records.map((record) =>
+        this.serializeId(
+          (record as unknown as { estimate_id: unknown }).estimate_id,
+          'invoice snapshot estimate id',
+        ),
+      ),
+    );
   }
 
   private async recordAudit(input: {
