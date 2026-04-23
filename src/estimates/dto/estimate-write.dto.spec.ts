@@ -22,6 +22,10 @@ describe('estimate write DTOs', () => {
         scheduled_end: '2026-03-20T10:00:00.000Z',
         estimate_status: EstimateStatus.SCHEDULED,
         payment_type: PaymentType.POS_CARD,
+        subtotal: '460',
+        tax_rate: '8.875',
+        tax_amount: '40.83',
+        total: '500.83',
         services: [
           {
             name: 'Brake Service',
@@ -57,6 +61,10 @@ describe('estimate write DTOs', () => {
     expect(transformed.customer_id).toBe('507f1f77bcf86cd799439011');
     expect(transformed.vehicle_id).toBe('507f1f77bcf86cd799439012');
     expect(transformed.assigned_user_id).toBe('507f1f77bcf86cd799439013');
+    expect(transformed.subtotal).toBe(460);
+    expect(transformed.tax_rate).toBe(8.875);
+    expect(transformed.tax_amount).toBe(40.83);
+    expect(transformed.total).toBe(500.83);
     expect(transformed.services[0].labor_lines[0].assigned_user_id).toBe(
       '507f1f77bcf86cd799439014',
     );

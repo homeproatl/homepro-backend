@@ -712,6 +712,9 @@ describe('EstimatesService', () => {
       _id: '507f1f77bcf86cd799439011',
       payment_status: PaidStatus.UNPAID,
       amount_paid: 0,
+      labor_total: 0,
+      parts_total: 200,
+      subtotal: 200,
       total: 200,
       toObject: jest.fn().mockImplementation(() => ({
         _id: '507f1f77bcf86cd799439011',
@@ -725,8 +728,9 @@ describe('EstimatesService', () => {
         due_date: null,
         estimate_status: EstimateStatus.SCHEDULED,
         services: [],
-        labor_total: 0,
-        parts_total: 0,
+        labor_total: estimate.labor_total,
+        parts_total: estimate.parts_total,
+        subtotal: estimate.subtotal,
         total: estimate.total,
       })),
       save,
@@ -755,6 +759,9 @@ describe('EstimatesService', () => {
       _id: '507f1f77bcf86cd799439011',
       payment_status: PaidStatus.PART_PAID,
       amount_paid: 100,
+      labor_total: 300,
+      parts_total: 200,
+      subtotal: 500,
       total: 500,
       payment_events: [
         {
@@ -781,8 +788,9 @@ describe('EstimatesService', () => {
         due_date: null,
         estimate_status: EstimateStatus.SCHEDULED,
         services: [],
-        labor_total: 0,
-        parts_total: 0,
+        labor_total: estimate.labor_total,
+        parts_total: estimate.parts_total,
+        subtotal: estimate.subtotal,
         total: estimate.total,
       })),
       save,
@@ -829,6 +837,7 @@ describe('EstimatesService', () => {
       services: [],
       labor_total: 0,
       parts_total: 0,
+      subtotal: 200,
       total: 200,
       toObject: jest.fn().mockImplementation(() => ({
         _id: '507f1f77bcf86cd799439011',
@@ -847,6 +856,7 @@ describe('EstimatesService', () => {
         services: [],
         labor_total: 0,
         parts_total: 0,
+        subtotal: estimate.subtotal,
         total: 200,
         created_at: new Date('2026-04-03T08:00:00.000Z'),
         updated_at: new Date('2026-04-03T08:30:00.000Z'),
@@ -871,5 +881,56 @@ describe('EstimatesService', () => {
 
     expect(estimate.payment_status).toBe(PaidStatus.PART_PAID);
     expect(estimate.amount_paid).toBe(0);
+  });
+
+  it('preserves recorded overpayments from legacy payment events while recomputing due from job total billing', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        withDerivedEstimate: (estimate: Record<string, unknown>) => Record<string, unknown>;
+      }
+    ).withDerivedEstimate({
+      _id: '507f1f77bcf86cd799439011',
+      estimate_number: 'EST-103',
+      title: 'Legacy Paid Invoice',
+      customer_id: '507f1f77bcf86cd799439012',
+      vehicle_id: '507f1f77bcf86cd799439013',
+      assigned_user_id: null,
+      complaint_or_request: null,
+      notes: null,
+      payment_type: 'POS_CARD',
+      due_date: null,
+      estimate_status: EstimateStatus.SCHEDULED,
+      payment_status: PaidStatus.PAID,
+      amount_paid: 460,
+      payment_events: [
+        {
+          amount_delta: 500.83,
+          amount_paid_total: 500.83,
+          amount_remaining_total: 0,
+          payment_status: PaidStatus.PAID,
+          recorded_at: new Date('2026-04-03T08:00:00.000Z'),
+          source: 'STATUS_UPDATE',
+          actor_user_id: null,
+          note: 'Marked paid in full under the old tax-inclusive model',
+        },
+      ],
+      services: [],
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 460,
+      created_at: new Date('2026-04-03T08:00:00.000Z'),
+      updated_at: new Date('2026-04-03T08:30:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      amount_paid: 500.83,
+      amount_remaining: 0,
+      total: 460,
+    });
   });
 });

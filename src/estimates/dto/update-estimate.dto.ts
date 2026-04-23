@@ -6,8 +6,10 @@ import {
   IsDateString,
   IsEnum,
   IsMongoId,
+  IsNumber,
   IsOptional,
   IsString,
+  Min,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -62,6 +64,30 @@ export class UpdateEstimateDto {
   @IsOptional()
   @IsDateString()
   due_date?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  subtotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  tax_rate?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  tax_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  total?: number;
 
   @IsOptional()
   @IsArray()

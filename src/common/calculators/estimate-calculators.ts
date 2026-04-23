@@ -74,6 +74,11 @@ export type CalculatedEstimateTotals = {
   total: number;
 };
 
+export type CalculatedEstimatePaymentState = {
+  amount_paid: number;
+  amount_remaining: number;
+};
+
 export const DEFAULT_ESTIMATE_TAX_RATE_PERCENT = 0;
 
 function roundCurrency(value: number): number {
@@ -255,16 +260,53 @@ export function resolveEstimateTotals(input: {
 }, options?: { applyDefaultTaxWhenMissing?: boolean }): CalculatedEstimateTotals {
   const labor_total = normalizeCurrencyValue(input.labor_total) ?? 0;
   const parts_total = normalizeCurrencyValue(input.parts_total) ?? 0;
+  const fallbackSubtotal = roundCurrency(labor_total + parts_total);
   const subtotal =
-    normalizeCurrencyValue(input.subtotal) ??
-    roundCurrency(labor_total + parts_total);
+    normalizeCurrencyValue(input.subtotal) ?? fallbackSubtotal;
+  const resolvedSubtotal = subtotal > 0 ? subtotal : fallbackSubtotal;
+  const tax_rate =
+    typeof input.tax_rate === 'number' && Number.isFinite(input.tax_rate)
+      ? normalizeTaxRate(input.tax_rate)
+      : options?.applyDefaultTaxWhenMissing
+        ? DEFAULT_ESTIMATE_TAX_RATE_PERCENT
+        : 0;
+  const providedTaxAmount = normalizeCurrencyValue(input.tax_amount);
+  const providedTotal = normalizeCurrencyValue(input.total);
+  const calculatedTaxAmount = roundCurrency(resolvedSubtotal * (tax_rate / 100));
+  const tax_amount =
+    providedTaxAmount !== null &&
+    (providedTaxAmount > 0 || tax_rate === 0 || resolvedSubtotal === 0)
+      ? providedTaxAmount
+      : tax_rate > 0
+        ? calculatedTaxAmount
+        : providedTotal !== null && providedTotal > resolvedSubtotal
+          ? roundCurrency(providedTotal - resolvedSubtotal)
+          : 0;
+  const total = resolvedSubtotal;
 
   return {
     labor_total,
     parts_total,
-    subtotal: subtotal > 0 ? subtotal : roundCurrency(labor_total + parts_total),
-    tax_rate: 0,
-    tax_amount: 0,
-    total: subtotal > 0 ? subtotal : roundCurrency(labor_total + parts_total),
+    subtotal: resolvedSubtotal,
+    tax_rate,
+    tax_amount,
+    total,
+  };
+}
+
+export function resolveEstimatePaymentState(input: {
+  amount_paid?: number | null;
+  total?: number | null;
+  payment_status?: string | null;
+}): CalculatedEstimatePaymentState {
+  const total = normalizeCurrencyValue(input.total ?? undefined) ?? 0;
+  const fallbackAmountPaid = input.payment_status === 'PAID' ? total : 0;
+  const amount_paid =
+    normalizeCurrencyValue(input.amount_paid ?? undefined) ??
+    fallbackAmountPaid;
+
+  return {
+    amount_paid,
+    amount_remaining: roundCurrency(Math.max(total - amount_paid, 0)),
   };
 }

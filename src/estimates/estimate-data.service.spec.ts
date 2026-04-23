@@ -131,6 +131,90 @@ describe('EstimateDataService', () => {
     );
   });
 
+  it('preserves provided estimate tax totals when creating an estimate', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'estimate-1' });
+    const service = createService({
+      customerModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      },
+      vehicleModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'vehicle-1',
+            customer_id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      },
+      userModel: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      serviceModel: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      estimateModel: {
+        create,
+      },
+    });
+
+    await service.createEstimate({
+      estimate_number: 'EST-002',
+      title: 'Front Wheel Bearing',
+      customer_id: 'customer-1',
+      vehicle_id: 'vehicle-1',
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 500.83,
+      services: [
+        {
+          name: 'Front Wheel Bearing',
+          labor_lines: [
+            {
+              description: 'Labor',
+              hours: 1,
+              rate: 260,
+              discount_percent: 0,
+            },
+          ],
+          part_lines: [
+            {
+              name: 'Wheel Bearing',
+              quantity: 1,
+              cost: 120,
+              price: 200,
+              discount_percent: 0,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labor_total: 260,
+        parts_total: 200,
+        subtotal: 460,
+        tax_rate: 8.875,
+        tax_amount: 40.83,
+        total: 460,
+      }),
+    );
+  });
+
   it('rejects missing canned services when referenced by a estimate service group', async () => {
     const service = createService({
       customerModel: {
@@ -558,6 +642,107 @@ describe('EstimateDataService', () => {
         ],
       }),
     ).resolves.toBe(estimate);
+  });
+
+  it('preserves provided estimate tax totals when updating an estimate', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    const service = createService({
+      customerModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      },
+      vehicleModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'vehicle-1',
+            customer_id: 'customer-1',
+            is_archived: false,
+          }),
+        }),
+      },
+      userModel: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      serviceModel: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      estimateModel: {
+        find: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      },
+    });
+
+    const estimate = {
+      _id: 'estimate-2',
+      title: 'Front Wheel Bearing',
+      customer_id: 'customer-1',
+      vehicle_id: 'vehicle-1',
+      assigned_user_id: null,
+      complaint_or_request: null,
+      notes: null,
+      payment_type: 'POS_CARD',
+      due_date: null,
+      services: [],
+      labor_total: 0,
+      parts_total: 0,
+      subtotal: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: 0,
+      save,
+    };
+
+    await service.applyEstimateUpdate(estimate as never, {
+      title: 'Front Wheel Bearing',
+      customer_id: 'customer-1',
+      vehicle_id: 'vehicle-1',
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 500.83,
+      services: [
+        {
+          name: 'Front Wheel Bearing',
+          labor_lines: [
+            {
+              description: 'Labor',
+              hours: 1,
+              rate: 260,
+              discount_percent: 0,
+            },
+          ],
+          part_lines: [
+            {
+              name: 'Wheel Bearing',
+              quantity: 1,
+              cost: 120,
+              price: 200,
+              discount_percent: 0,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(estimate.labor_total).toBe(260);
+    expect(estimate.parts_total).toBe(200);
+    expect(estimate.subtotal).toBe(460);
+    expect(estimate.tax_rate).toBe(8.875);
+    expect(estimate.tax_amount).toBe(40.83);
+    expect(estimate.total).toBe(460);
   });
 
   it('allows admin users on labor lines', async () => {

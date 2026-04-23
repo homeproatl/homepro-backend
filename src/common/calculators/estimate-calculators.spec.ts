@@ -4,6 +4,7 @@ import {
   calculateLaborSubtotal,
   calculatePartSubtotal,
   calculateServiceTotals,
+  resolveEstimatePaymentState,
   resolveEstimateTotals,
 } from './estimate-calculators';
 
@@ -95,6 +96,58 @@ describe('estimate calculators', () => {
       tax_rate: 0,
       tax_amount: 0,
       total: 460,
+    });
+  });
+
+  it('derives included tax from a higher stored total without adding it to the estimate total', () => {
+    expect(
+      resolveEstimateTotals({
+        labor_total: 260,
+        parts_total: 200,
+        subtotal: 460,
+        tax_rate: 8.875,
+        total: 500.83,
+      }),
+    ).toEqual({
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 460,
+    });
+  });
+
+  it('preserves included tax when the stored total already equals the subtotal', () => {
+    expect(
+      resolveEstimateTotals({
+        labor_total: 260,
+        parts_total: 200,
+        subtotal: 460,
+        tax_rate: 8.875,
+        tax_amount: 40.83,
+        total: 460,
+      }),
+    ).toEqual({
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 460,
+    });
+  });
+
+  it('preserves recorded overpayments while recomputing the remaining balance from job total billing', () => {
+    expect(
+      resolveEstimatePaymentState({
+        amount_paid: 500.83,
+        total: 460,
+        payment_status: 'PAID',
+      }),
+    ).toEqual({
+      amount_paid: 500.83,
+      amount_remaining: 0,
     });
   });
 

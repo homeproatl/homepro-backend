@@ -267,6 +267,30 @@ export class CreateEstimateDto {
   due_date?: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  subtotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  tax_rate?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  tax_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  total?: number;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => EstimateSourceMetadataDto)
   source_metadata?: EstimateSourceMetadataDto | null;

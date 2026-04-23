@@ -9,6 +9,7 @@ import { Model, Types } from 'mongoose';
 import {
   calculateEstimateTotals,
   calculateServiceTotals,
+  resolveEstimateTotals,
 } from '../common/calculators/estimate-calculators';
 import {
   Customer,
@@ -95,6 +96,10 @@ type EstimateWriteInput = {
   payment_status?: PaidStatus;
   payment_type?: PaymentType;
   due_date?: Date | null;
+  subtotal?: number;
+  tax_rate?: number;
+  tax_amount?: number;
+  total?: number;
   source_metadata?: EstimateSourceMetadataWriteInput | null;
   services: EstimateServiceWriteInput[];
 };
@@ -335,7 +340,15 @@ export class EstimateDataService {
       input.services,
       currentEstimate,
     );
-    const totals = calculateEstimateTotals(services);
+    const serviceTotals = calculateEstimateTotals(services);
+    const totals = resolveEstimateTotals({
+      labor_total: serviceTotals.labor_total,
+      parts_total: serviceTotals.parts_total,
+      subtotal: input.subtotal,
+      tax_rate: input.tax_rate,
+      tax_amount: input.tax_amount,
+      total: input.total,
+    });
 
     return {
       customer,

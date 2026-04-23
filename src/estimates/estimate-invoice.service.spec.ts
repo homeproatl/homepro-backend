@@ -64,9 +64,9 @@ describe('EstimateInvoiceService', () => {
       subtotal_snapshot: 100,
       tax_rate_snapshot: 8.875,
       tax_amount_snapshot: 8.88,
-      total: 108.88,
+      total: 100,
       amount_paid_snapshot: 0,
-      amount_remaining_snapshot: 108.88,
+      amount_remaining_snapshot: 100,
       payment_status_snapshot: 'UNPAID',
       payment_type_snapshot: 'POS_CARD',
       due_date_snapshot: null,
@@ -95,16 +95,19 @@ describe('EstimateInvoiceService', () => {
       ...overrides,
     };
 
-    return {
-      _id: raw._id,
-      estimate_id: raw.estimate_id,
-      invoice_number: raw.invoice_number,
-      revision_number: raw.revision_number,
-      status: raw.status,
-      sent_at: raw.sent_at,
+    const document = {
+      ...raw,
       save: jest.fn().mockResolvedValue(undefined),
-      toObject: () => raw,
+      toObject: () => ({
+        ...raw,
+        status: document.status,
+        sent_at: document.sent_at,
+        stale_at: document.stale_at,
+        superseded_by_snapshot_id: document.superseded_by_snapshot_id,
+      }),
     };
+
+    return document;
   }
 
   function createDispatchDocument() {
@@ -172,7 +175,7 @@ describe('EstimateInvoiceService', () => {
         subtotal_snapshot: 100,
         tax_rate_snapshot: 8.875,
         tax_amount_snapshot: 8.88,
-        total: 108.88,
+        total: 100,
         payment_status_snapshot: 'UNPAID',
         payment_type_snapshot: 'POS_CARD',
         due_date_snapshot: null,
@@ -187,6 +190,9 @@ describe('EstimateInvoiceService', () => {
       expect.objectContaining({
         invoice_number: 'EST-001-R4',
         revision_number: 4,
+        subtotal_snapshot: 100,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
       }),
     );
     expect(create).toHaveBeenNthCalledWith(
@@ -194,6 +200,9 @@ describe('EstimateInvoiceService', () => {
       expect.objectContaining({
         invoice_number: 'EST-001-R5',
         revision_number: 5,
+        subtotal_snapshot: 100,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
       }),
     );
   });
@@ -228,7 +237,7 @@ describe('EstimateInvoiceService', () => {
         subtotal_snapshot: 100,
         tax_rate_snapshot: 8.875,
         tax_amount_snapshot: 8.88,
-        total: 108.88,
+        total: 100,
         payment_status_snapshot: 'UNPAID',
         payment_type_snapshot: 'POS_CARD',
         due_date_snapshot: null,
@@ -242,6 +251,9 @@ describe('EstimateInvoiceService', () => {
       expect.objectContaining({
         invoice_number: 'RBNTPT',
         revision_number: 1,
+        subtotal_snapshot: 100,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
       }),
     );
   });
@@ -389,6 +401,80 @@ describe('EstimateInvoiceService', () => {
     );
     expect(result.fileName).toBe('EST-001.pdf');
     expect(result.buffer).toEqual(Buffer.from(Uint8Array.of(4, 5, 6)));
+  });
+
+  it('reissues snapshots when stored tax fields drift from the current invoice payload', async () => {
+    const latestSnapshot = createSnapshotDocument({
+      invoice_number: 'EST-001',
+      revision_number: 1,
+      billable_hash: 'hash-1',
+      subtotal_snapshot: 100,
+      tax_rate_snapshot: 8.875,
+      tax_amount_snapshot: 0,
+      total: 100,
+      amount_paid_snapshot: 0,
+      amount_remaining_snapshot: 100,
+    });
+    const newSnapshot = createSnapshotDocument({
+      _id: 'snapshot-2',
+      invoice_number: 'EST-001-R2',
+      revision_number: 2,
+      billable_hash: 'hash-1',
+      subtotal_snapshot: 100,
+      tax_rate_snapshot: 8.875,
+      tax_amount_snapshot: 8.88,
+      total: 100,
+      amount_paid_snapshot: 0,
+      amount_remaining_snapshot: 100,
+    });
+    const findOne = jest
+      .fn()
+      .mockReturnValueOnce({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(latestSnapshot),
+        }),
+      })
+      .mockReturnValueOnce({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(latestSnapshot),
+        }),
+      });
+    const create = jest.fn().mockResolvedValue(newSnapshot);
+    const recordAudit = jest.fn().mockResolvedValue(undefined);
+    const service = createService({
+      estimateInvoiceSnapshotModel: {
+        findOne,
+        create,
+      },
+      auditLogModel: {
+        create: recordAudit,
+      },
+    });
+
+    const result = await (
+      service as unknown as {
+        resolveIssueableSnapshot: (aggregate: unknown) => Promise<unknown>;
+      }
+    ).resolveIssueableSnapshot({
+      estimate: { _id: 'estimate-1' },
+      payload: createInvoicePayload(),
+      blockers: [],
+      billableHash: 'hash-1',
+    });
+
+    expect(latestSnapshot.status).toBe('STALE');
+    expect(latestSnapshot.save).toHaveBeenCalledTimes(2);
+    expect(latestSnapshot.superseded_by_snapshot_id).toBe('snapshot-2');
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice_number: 'EST-001-R2',
+        revision_number: 2,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 8.88,
+        total: 100,
+      }),
+    );
+    expect(result).toBe(newSnapshot);
   });
 
   it('does not treat LOG transport as a successful email delivery', () => {
@@ -557,9 +643,9 @@ describe('EstimateInvoiceService', () => {
       subTotal: 135,
       taxRate: 8.875,
       taxAmount: 11.98,
-      total: 146.98,
+      total: 135,
       amountPaid: 0,
-      amountRemaining: 146.98,
+      amountRemaining: 135,
       services: [
         {
           name: 'Brake Service',
@@ -611,19 +697,26 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('Customer hears grinding when braking.');
     expect(html).toContain('RECOMMENDATION');
     expect(html).toContain('Replace front brake pads.');
-    expect(html).toContain('Rate / hr');
-    expect(html).toContain('Part used');
+    expect(html).toContain('RATE / HR');
+    expect(html).toContain('PART USED');
     expect(html).toContain('Labor subtotal');
     expect(html).toContain('Parts subtotal');
+    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('$11.98');
     expect(html).toContain('Total due');
+    expect(html).toContain('$135.00');
     expect(html).toContain('Brake Service');
     expect(html).toContain('Brake labor');
     expect(html).toContain(
-      'border-collapse:collapse;border:1px solid #cbd5e1;',
+      'border-collapse:collapse;border:1px solid #cbd5e1;table-layout:fixed;',
     );
     expect(html).toContain(
-      'background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;',
+      'font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;',
     );
+    expect(html).toContain('box-sizing: border-box;');
+    expect(html).toContain('print-color-adjust: exact;');
+    expect(html).toContain('@media print');
+    expect(html).toContain('padding: 10px !important;');
     expect(html).toContain('M Rico');
   });
 
@@ -751,6 +844,206 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('$230.00');
   });
 
+  it('renders included tax without increasing the remaining balance for paid invoices', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-654322',
+      estimateNumber: 'EST-002B',
+      title: 'Suspension Service',
+      timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'XYZ-789 · Honda Accord',
+      vehicleVin: 'VIN-789',
+      vehiclePlate: 'XYZ-789',
+      vehicleYear: 2023,
+      vehicleMake: 'Honda',
+      vehicleModel: 'Accord',
+      vehicleMileage: 50000,
+      vehicleMileageOut: 50000,
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'PART_PAID',
+      paymentType: 'POS_CARD',
+      subTotal: 460,
+      taxRate: 8.875,
+      taxAmount: 40.83,
+      total: 460,
+      amountPaid: 460,
+      amountRemaining: 0,
+      services: [
+        {
+          name: 'Suspension Service',
+          note: 'Front suspension work',
+          laborTotal: 260,
+          partsTotal: 200,
+          total: 460,
+          laborLines: [
+            {
+              description: 'Suspension labor',
+              hours: 2,
+              rate: 130,
+              subTotal: 260,
+            },
+          ],
+          partLines: [
+            {
+              description: 'Control arm',
+              partNumber: 'CA-200',
+              quantity: 1,
+              price: 200,
+              subTotal: 200,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Subtotal');
+    expect(html).toContain('$460.00');
+    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('$40.83');
+    expect(html).toContain('Part paid');
+    expect(html).toContain('-$460.00');
+    expect(html).toContain('Total due');
+    expect(html).toContain('$0.00');
+  });
+
+  it('renders preserved included tax without increasing total due when the stored estimate total equals the subtotal', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-654323',
+      estimateNumber: 'EST-002C',
+      title: 'General Service',
+      timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'ABC-123 · BMW X5',
+      vehicleVin: 'VIN-123',
+      vehiclePlate: 'ABC-123',
+      vehicleYear: 2015,
+      vehicleMake: 'BMW',
+      vehicleModel: 'X5',
+      vehicleMileage: 72000,
+      vehicleMileageOut: 72000,
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'PAID',
+      paymentType: 'POS_CARD',
+      subTotal: 460,
+      taxRate: 8.875,
+      taxAmount: 40.83,
+      total: 460,
+      amountPaid: 460,
+      amountRemaining: 0,
+      services: [
+        {
+          name: 'General Service',
+          note: null,
+          laborTotal: 260,
+          partsTotal: 200,
+          total: 460,
+          laborLines: [
+            {
+              description: 'General labor',
+              hours: 2,
+              rate: 130,
+              subTotal: 260,
+            },
+          ],
+          partLines: [
+            {
+              description: 'General part',
+              partNumber: 'GP-200',
+              quantity: 1,
+              price: 200,
+              subTotal: 200,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Subtotal');
+    expect(html).toContain('$460.00');
+    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('$40.83');
+    expect(html).toContain('Amount paid');
+    expect(html).toContain('-$460.00');
+    expect(html).toContain('Total due');
+    expect(html).toContain('$0.00');
+  });
+
+  it('preserves recorded overpayments on invoices while recomputing the remaining balance from job total billing', () => {
+    const html = renderInvoiceDocumentHtml({
+      invoiceNumber: 'INV-654324',
+      estimateNumber: 'EST-002D',
+      title: 'General Service',
+      timeZone: 'America/New_York',
+      customerComment: null,
+      recommendation: null,
+      customerName: 'Rico Customer',
+      customerEmail: 'customer@test.com',
+      customerPhone: '555-0100',
+      vehicleLabel: 'ABC-123 · BMW X5',
+      vehicleVin: 'VIN-123',
+      vehiclePlate: 'ABC-123',
+      vehicleYear: 2015,
+      vehicleMake: 'BMW',
+      vehicleModel: 'X5',
+      vehicleMileage: 72000,
+      vehicleMileageOut: 72000,
+      dueDate: '2026-03-29T00:00:00.000Z',
+      generatedAt: '2026-03-25T00:00:00.000Z',
+      paymentStatus: 'PAID',
+      paymentType: 'POS_CARD',
+      subTotal: 460,
+      taxRate: 8.875,
+      taxAmount: 40.83,
+      total: 460,
+      amountPaid: 500.83,
+      amountRemaining: 0,
+      services: [
+        {
+          name: 'General Service',
+          note: null,
+          laborTotal: 260,
+          partsTotal: 200,
+          total: 460,
+          laborLines: [
+            {
+              description: 'General labor',
+              hours: 2,
+              rate: 130,
+              subTotal: 260,
+            },
+          ],
+          partLines: [
+            {
+              description: 'General part',
+              partNumber: 'GP-200',
+              quantity: 1,
+              price: 200,
+              subTotal: 200,
+            },
+          ],
+        },
+      ],
+      mode: 'issued',
+    });
+
+    expect(html).toContain('Amount paid');
+    expect(html).toContain('-$500.83');
+    expect(html).toContain('Total due');
+    expect(html).toContain('$0.00');
+  });
+
   it('derives total due from total minus amount paid when a snapshot carries a stale remaining balance', () => {
     const html = renderInvoiceDocumentHtml({
       invoiceNumber: 'INV-777777',
@@ -875,6 +1168,77 @@ describe('EstimateInvoiceService', () => {
     });
     expect(result).not.toHaveProperty('_id');
     expect(result).not.toHaveProperty('__v');
+  });
+
+  it('serializes invoice snapshots with recomputed remaining balances while preserving recorded overpayments', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        serializeSnapshot: (snapshot: {
+          toObject: () => Record<string, unknown>;
+        }) => Record<string, unknown>;
+      }
+    ).serializeSnapshot({
+      toObject: () => ({
+        _id: 'snapshot-legacy-1',
+        estimate_id: 'estimate-1',
+        invoice_number: 'INV-101',
+        revision_number: 3,
+        status: 'SENT',
+        customer_snapshot: {
+          customer_id: 'customer-1',
+          name: 'Rico Customer',
+          email: 'customer@example.com',
+          phone: '123',
+        },
+        vehicle_snapshot: {
+          vehicle_id: 'vehicle-1',
+          label: '2020 Honda Accord',
+          vin: 'VIN123',
+          license_plate: 'ABC123',
+        },
+        services_snapshot: [
+          {
+            estimate_service_id: 'service-1',
+            canned_service_id: null,
+            name: 'Legacy Service',
+            labor_lines: [],
+            part_lines: [],
+            labor_total: 260,
+            parts_total: 200,
+            total: 460,
+          },
+        ],
+        estimate_number_snapshot: 'EST-101',
+        title_snapshot: 'Legacy Paid Invoice',
+        time_zone_snapshot: 'America/New_York',
+        subtotal_snapshot: 460,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 40.83,
+        total: 500.83,
+        amount_paid_snapshot: 500.83,
+        amount_remaining_snapshot: 40.83,
+        payment_status_snapshot: 'PAID',
+        payment_type_snapshot: 'POS_CARD',
+        due_date_snapshot: null,
+        scheduled_start_snapshot: null,
+        scheduled_end_snapshot: null,
+        billable_hash: 'hash-legacy-1',
+        issued_at: '2026-04-03T08:00:00.000Z',
+        sent_at: '2026-04-03T08:05:00.000Z',
+        stale_at: null,
+        superseded_by_snapshot_id: null,
+        created_at: '2026-04-03T08:00:00.000Z',
+        updated_at: '2026-04-03T08:05:00.000Z',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      total: 460,
+      amount_paid_snapshot: 500.83,
+      amount_remaining_snapshot: 0,
+    });
   });
 
   it('serializes invoice snapshot part numbers', () => {

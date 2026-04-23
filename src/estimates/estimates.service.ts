@@ -19,7 +19,10 @@ import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot
 import { EstimateDataService } from './estimate-data.service';
 import { EstimateDomainService } from './estimate-domain.service';
 import { EstimateInvoiceService } from './estimate-invoice.service';
-import { resolveEstimateTotals } from '../common/calculators/estimate-calculators';
+import {
+  resolveEstimatePaymentState,
+  resolveEstimateTotals,
+} from '../common/calculators/estimate-calculators';
 import { serializeEmbeddedTags } from '../tags/tag-serialization';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { ListEstimatesQueryDto } from './dto/list-estimates-query.dto';
@@ -154,6 +157,10 @@ export class EstimatesService {
       payment_status: payload.payment_status,
       payment_type: payload.payment_type,
       due_date: payload.due_date ? new Date(payload.due_date) : null,
+      subtotal: payload.subtotal,
+      tax_rate: payload.tax_rate,
+      tax_amount: payload.tax_amount,
+      total: payload.total,
       source_metadata: payload.source_metadata ?? null,
       services: payload.services,
     });
@@ -449,6 +456,30 @@ export class EstimatesService {
           : payload.due_date
             ? new Date(payload.due_date)
             : null,
+      subtotal:
+        payload.subtotal === undefined
+          ? payload.services === undefined
+            ? estimate.subtotal
+            : undefined
+          : payload.subtotal,
+      tax_rate:
+        payload.tax_rate === undefined
+          ? payload.services === undefined
+            ? estimate.tax_rate
+            : undefined
+          : payload.tax_rate,
+      tax_amount:
+        payload.tax_amount === undefined
+          ? payload.services === undefined
+            ? estimate.tax_amount
+            : undefined
+          : payload.tax_amount,
+      total:
+        payload.total === undefined
+          ? payload.services === undefined
+            ? estimate.total
+            : undefined
+          : payload.total,
       services: payload.services ?? currentServices,
     });
     this.syncPaymentState(estimate);
@@ -524,7 +555,7 @@ export class EstimatesService {
     );
 
     const before = estimate.toObject();
-    const total = Math.max(estimate.total ?? 0, 0);
+    const total = this.resolveEstimateBillingTotal(estimate);
 
     const previousAmountPaid = this.resolveAmountPaid(
       estimate.amount_paid,
@@ -750,6 +781,10 @@ export class EstimatesService {
     payment_status?: PaidStatus;
     payment_type?: PaymentType;
     due_date?: Date | null;
+    subtotal?: number;
+    tax_rate?: number;
+    tax_amount?: number;
+    total?: number;
     services: CreateEstimateDto['services'];
     source_metadata?: CreateEstimateDto['source_metadata'];
   }) {
@@ -770,6 +805,10 @@ export class EstimatesService {
           payment_status: input.payment_status,
           payment_type: input.payment_type,
           due_date: input.due_date ?? null,
+          subtotal: input.subtotal,
+          tax_rate: input.tax_rate,
+          tax_amount: input.tax_amount,
+          total: input.total,
           source_metadata: input.source_metadata ?? null,
           services: input.services,
         });
@@ -818,13 +857,17 @@ export class EstimatesService {
       latestEvent &&
       typeof latestEvent.amount_paid_total === 'number'
     ) {
-      return Math.min(Math.max(latestEvent.amount_paid_total, 0), total);
+      return resolveEstimatePaymentState({
+        amount_paid: latestEvent.amount_paid_total,
+        total,
+        payment_status: paymentStatus,
+      }).amount_paid;
     }
-    const fallbackAmountPaid =
-      paymentStatus === PaidStatus.PAID ? total : 0;
-    const candidateAmountPaid =
-      typeof rawAmountPaid === 'number' ? rawAmountPaid : fallbackAmountPaid;
-    return Math.min(Math.max(candidateAmountPaid, 0), total);
+    return resolveEstimatePaymentState({
+      amount_paid: rawAmountPaid,
+      total,
+      payment_status: paymentStatus,
+    }).amount_paid;
   }
 
   private resolveLatestPaymentEvent(
@@ -842,7 +885,10 @@ export class EstimatesService {
   }
 
   private resolveAmountRemaining(total: number, amountPaid: number) {
-    return Math.max(total - amountPaid, 0);
+    return resolveEstimatePaymentState({
+      amount_paid: amountPaid,
+      total,
+    }).amount_remaining;
   }
 
   private syncPaymentState(
@@ -851,7 +897,7 @@ export class EstimatesService {
       preferRawAmount?: boolean;
     },
   ) {
-    const total = Math.max(estimate.total ?? 0, 0);
+    const total = this.resolveEstimateBillingTotal(estimate);
     const isLegacyPartPaidWithoutAmount =
       estimate.payment_status === PaidStatus.PART_PAID &&
       (estimate.amount_paid === undefined || estimate.amount_paid === null) &&
@@ -890,12 +936,14 @@ export class EstimatesService {
       note?: string;
     },
   ) {
-    const total = Math.max(estimate.total ?? 0, 0);
-    const currentAmountPaid = Math.min(
-      Math.max(estimate.amount_paid ?? 0, 0),
-      total,
-    );
+    const total = this.resolveEstimateBillingTotal(estimate);
     const currentStatus = estimate.payment_status ?? PaidStatus.UNPAID;
+    const currentPaymentState = resolveEstimatePaymentState({
+      amount_paid: estimate.amount_paid,
+      total,
+      payment_status: currentStatus,
+    });
+    const currentAmountPaid = currentPaymentState.amount_paid;
     const previousStatus = this.resolveLatestPaymentEvent(
       estimate.payment_events as EstimatePaymentEventRecord[] | undefined,
     )?.payment_status;
@@ -913,7 +961,7 @@ export class EstimatesService {
     const event: EstimatePaymentEventRecord = {
       amount_delta: amountDelta,
       amount_paid_total: currentAmountPaid,
-      amount_remaining_total: Math.max(total - currentAmountPaid, 0),
+      amount_remaining_total: currentPaymentState.amount_remaining,
       payment_status: currentStatus,
       recorded_at: new Date(),
       source: input.source,
@@ -1227,6 +1275,32 @@ export class EstimatesService {
       created_at_shop_time: stringOrNull(metadata.created_at_shop_time),
       invoiced_at_shop_time: stringOrNull(metadata.invoiced_at_shop_time),
     };
+  }
+
+  private resolveEstimateBillingTotal(
+    estimate: Pick<
+      Estimate,
+      'labor_total' | 'parts_total' | 'subtotal' | 'tax_rate' | 'tax_amount' | 'total'
+    >,
+  ) {
+    return resolveEstimateTotals(
+      {
+        labor_total:
+          typeof estimate.labor_total === 'number' ? estimate.labor_total : 0,
+        parts_total:
+          typeof estimate.parts_total === 'number' ? estimate.parts_total : 0,
+        subtotal:
+          typeof estimate.subtotal === 'number' ? estimate.subtotal : undefined,
+        tax_rate:
+          typeof estimate.tax_rate === 'number' ? estimate.tax_rate : undefined,
+        tax_amount:
+          typeof estimate.tax_amount === 'number'
+            ? estimate.tax_amount
+            : undefined,
+        total: typeof estimate.total === 'number' ? estimate.total : undefined,
+      },
+      { applyDefaultTaxWhenMissing: true },
+    ).total;
   }
 
   private serializeServices(services?: Array<Record<string, unknown>>) {

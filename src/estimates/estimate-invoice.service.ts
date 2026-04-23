@@ -49,7 +49,10 @@ import {
 } from './schemas/estimate-invoice-dispatch.schema';
 import { EstimateInvoiceSnapshotStatus } from './enums/estimate-invoice-snapshot-status.enum';
 import { EstimateInvoiceDispatchStatus } from './enums/estimate-invoice-dispatch-status.enum';
-import { resolveEstimateTotals } from '../common/calculators/estimate-calculators';
+import {
+  resolveEstimatePaymentState,
+  resolveEstimateTotals,
+} from '../common/calculators/estimate-calculators';
 
 type InvoiceCustomerSnapshot = {
   customer_id: string;
@@ -783,8 +786,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       { applyDefaultTaxWhenMissing: true },
     );
     const total = estimateTotals.total;
-    const amountPaid = Math.min(Math.max(estimate.amount_paid ?? 0, 0), total);
-    const amountRemaining = Math.max(total - amountPaid, 0);
+    const paymentState = resolveEstimatePaymentState({
+      amount_paid: estimate.amount_paid,
+      total,
+      payment_status: estimate.payment_status,
+    });
 
     const payload: InvoiceDocumentPayload = {
       estimate_id: String(estimate._id),
@@ -802,8 +808,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       tax_rate_snapshot: estimateTotals.tax_rate,
       tax_amount_snapshot: estimateTotals.tax_amount,
       total,
-      amount_paid_snapshot: amountPaid,
-      amount_remaining_snapshot: amountRemaining,
+      amount_paid_snapshot: paymentState.amount_paid,
+      amount_remaining_snapshot: paymentState.amount_remaining,
       payment_status_snapshot: estimate.payment_status,
       payment_type_snapshot: estimate.payment_type,
       due_date_snapshot: estimate.due_date ? estimate.due_date.toISOString() : null,
@@ -895,6 +901,48 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     });
   }
 
+  private snapshotNumberMatches(
+    actual: number | undefined,
+    expected: number,
+    precision = 2,
+  ) {
+    if (typeof actual !== 'number' || !Number.isFinite(actual)) {
+      return false;
+    }
+
+    return actual.toFixed(precision) === expected.toFixed(precision);
+  }
+
+  private isSnapshotFinanciallySynced(
+    snapshot: EstimateInvoiceSnapshotDocument,
+    payload: InvoiceDocumentPayload,
+  ) {
+    return (
+      this.snapshotNumberMatches(
+        snapshot.subtotal_snapshot,
+        payload.subtotal_snapshot,
+      ) &&
+      this.snapshotNumberMatches(
+        snapshot.tax_rate_snapshot,
+        payload.tax_rate_snapshot,
+        3,
+      ) &&
+      this.snapshotNumberMatches(
+        snapshot.tax_amount_snapshot,
+        payload.tax_amount_snapshot,
+      ) &&
+      this.snapshotNumberMatches(snapshot.total, payload.total) &&
+      this.snapshotNumberMatches(
+        snapshot.amount_paid_snapshot,
+        payload.amount_paid_snapshot,
+      ) &&
+      this.snapshotNumberMatches(
+        snapshot.amount_remaining_snapshot,
+        payload.amount_remaining_snapshot,
+      )
+    );
+  }
+
   private async reconcileLatestSnapshot(aggregate: InvoiceAggregate) {
     const latestSnapshot = await this.estimateInvoiceSnapshotModel
       .findOne({ estimate_id: aggregate.estimate._id })
@@ -912,7 +960,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
 
     if (
       isBillableSnapshot &&
-      latestSnapshot.billable_hash !== aggregate.billableHash
+      (latestSnapshot.billable_hash !== aggregate.billableHash ||
+        !this.isSnapshotFinanciallySynced(latestSnapshot, aggregate.payload))
     ) {
       latestSnapshot.status = EstimateInvoiceSnapshotStatus.STALE;
       latestSnapshot.stale_at = new Date();
@@ -937,7 +986,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       latestSnapshot &&
       latestSnapshot.status !== EstimateInvoiceSnapshotStatus.STALE &&
       latestSnapshot.status !== EstimateInvoiceSnapshotStatus.VOID &&
-      latestSnapshot.billable_hash === aggregate.billableHash
+      latestSnapshot.billable_hash === aggregate.billableHash &&
+      this.isSnapshotFinanciallySynced(latestSnapshot, aggregate.payload)
     ) {
       return latestSnapshot;
     }
@@ -994,6 +1044,9 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           complaint_or_request_snapshot:
             aggregate.payload.complaint_or_request_snapshot,
           recommendation_snapshot: aggregate.payload.recommendation_snapshot,
+          subtotal_snapshot: aggregate.payload.subtotal_snapshot,
+          tax_rate_snapshot: aggregate.payload.tax_rate_snapshot,
+          tax_amount_snapshot: aggregate.payload.tax_amount_snapshot,
           total: aggregate.payload.total,
           amount_paid_snapshot: aggregate.payload.amount_paid_snapshot,
           amount_remaining_snapshot: aggregate.payload.amount_remaining_snapshot,
@@ -1107,6 +1160,14 @@ export class EstimateInvoiceService implements OnModuleDestroy {
           : undefined,
       total: raw.total,
     });
+    const paymentState = resolveEstimatePaymentState({
+      amount_paid:
+        typeof raw.amount_paid_snapshot === 'number'
+          ? raw.amount_paid_snapshot
+          : undefined,
+      total: resolvedTotals.total,
+      payment_status: raw.payment_status_snapshot,
+    });
 
     return {
       id: String(raw._id),
@@ -1130,17 +1191,8 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       tax_rate_snapshot: resolvedTotals.tax_rate,
       tax_amount_snapshot: resolvedTotals.tax_amount,
       total: resolvedTotals.total,
-      amount_paid_snapshot:
-        typeof raw.amount_paid_snapshot === 'number'
-          ? raw.amount_paid_snapshot
-          : 0,
-      amount_remaining_snapshot:
-        typeof raw.amount_remaining_snapshot === 'number'
-          ? raw.amount_remaining_snapshot
-          : Math.max(
-              resolvedTotals.total - (raw.amount_paid_snapshot ?? 0),
-              0,
-            ),
+      amount_paid_snapshot: paymentState.amount_paid,
+      amount_remaining_snapshot: paymentState.amount_remaining,
       payment_status_snapshot: raw.payment_status_snapshot,
       payment_type_snapshot: raw.payment_type_snapshot,
       time_zone_snapshot:

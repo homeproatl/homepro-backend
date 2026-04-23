@@ -125,6 +125,13 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatTaxRate(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(value);
+}
+
 function roundCurrency(value: number) {
   return Number((value + 1e-9).toFixed(2));
 }
@@ -169,7 +176,7 @@ function renderInvoiceLogo(input: {
   maxWidth: number;
   marginBottom: number;
 }) {
-  return `<img src="${escapeHtml(input.src)}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
+  return `<img class="invoice-logo" src="${escapeHtml(input.src)}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
 }
 
 function summarizeServices(services: InvoiceDocumentServiceGroup[]) {
@@ -194,10 +201,10 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
         .map(
           (line) => `
             <tr>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${escapeHtml(line.description)}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${line.hours}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${formatCurrency(line.rate)}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;text-align:right;font-size:12px;color:#111827;">${formatCurrency(line.subTotal)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${escapeHtml(line.description)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${line.hours}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${formatCurrency(line.rate)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11.5px;line-height:1.3;color:#111827;">${formatCurrency(line.subTotal)}</td>
             </tr>`,
         )
         .join('');
@@ -206,33 +213,33 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
         .map(
           (line) => `
             <tr>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${escapeHtml(line.description)}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${line.quantity}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;font-size:12px;color:#111827;">${formatCurrency(line.price)}</td>
-              <td style="padding:10px;border:1px solid #d7dee7;text-align:right;font-size:12px;color:#111827;">${formatCurrency(line.subTotal)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${escapeHtml(line.description)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${line.quantity}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;font-size:11.5px;line-height:1.3;color:#111827;">${formatCurrency(line.price)}</td>
+              <td style="padding:7px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11.5px;line-height:1.3;color:#111827;">${formatCurrency(line.subTotal)}</td>
             </tr>`,
         )
         .join('');
 
       return `
-        <div style="border-top:1px solid #e2e8f0;padding-top:16px;">
+        <div class="line-item-group" style="border-top:1px solid #d8dee8;padding-top:12px;">
           <p style="margin:0;font-size:14px;font-weight:600;color:#111827;">${escapeHtml(service.name.toUpperCase())}</p>
           ${
             service.note
-              ? `<p style="margin:6px 0 0;font-size:12px;color:#64748b;">${escapeHtml(service.note)}</p>`
+              ? `<p style="margin:4px 0 0;font-size:11.5px;line-height:1.35;color:#475569;">${escapeHtml(service.note)}</p>`
               : ''
           }
           ${
             service.laborLines.length > 0
               ? `
-              <div style="margin-top:12px;overflow-x:auto;">
-                <table style="width:100%;min-width:560px;border-collapse:collapse;border:1px solid #cbd5e1;">
+              <div class="line-table-wrap" style="margin-top:8px;">
+                <table style="width:100%;min-width:560px;border-collapse:collapse;border:1px solid #cbd5e1;table-layout:fixed;">
                   <thead>
                     <tr style="text-align:left;">
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Labor rates</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Hours</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Rate / hr</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;text-align:right;">Amount</th>
+                      <th style="width:46%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">LABOR RATES</th>
+                      <th style="width:16%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">HOURS</th>
+                      <th style="width:18%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">RATE / HR</th>
+                      <th style="width:20%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;text-align:right;">AMOUNT</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -245,14 +252,14 @@ function renderInvoiceLineItemsTable(services: InvoiceDocumentServiceGroup[]) {
           ${
             service.partLines.length > 0
               ? `
-              <div style="margin-top:12px;overflow-x:auto;">
-                <table style="width:100%;min-width:560px;border-collapse:collapse;border:1px solid #cbd5e1;">
+              <div class="line-table-wrap" style="margin-top:8px;">
+                <table style="width:100%;min-width:560px;border-collapse:collapse;border:1px solid #cbd5e1;table-layout:fixed;">
                   <thead>
                     <tr style="text-align:left;">
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Part used</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Qty</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;">Rate</th>
-                      <th style="padding:10px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;color:#0f172a;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.08em;text-align:right;">Amount</th>
+                      <th style="width:46%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">PART USED</th>
+                      <th style="width:16%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">QTY</th>
+                      <th style="width:18%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;">RATE</th>
+                      <th style="width:20%;padding:6px 8px;border:1px solid #cbd5e1;font-size:10.5px;line-height:1.2;font-weight:700;color:#111827;background:#f3f4f6;text-transform:uppercase;letter-spacing:0.07em;text-align:right;">AMOUNT</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -313,12 +320,35 @@ export function renderInvoiceDocumentHtml(
   const logoSrc = options.logoSrc ?? INVOICE_LOGO_DATA_URL;
   const invoiceSummary = summarizeServices(invoice.services);
   const subTotal = Math.max(invoice.subTotal ?? invoiceSummary.grandTotal, 0);
-  const total = Math.max(invoice.total ?? subTotal, 0);
-  const amountPaid = Math.min(
-    Math.max(invoice.amountPaid ?? 0, 0),
-    total,
+  const taxRate =
+    typeof invoice.taxRate === 'number' && Number.isFinite(invoice.taxRate)
+      ? Math.max(invoice.taxRate, 0)
+      : 0;
+  const taxAmount = Math.max(
+    typeof invoice.taxAmount === 'number' && Number.isFinite(invoice.taxAmount)
+      ? invoice.taxAmount
+      : roundCurrency(
+          Math.max(
+            (typeof invoice.total === 'number' && Number.isFinite(invoice.total)
+              ? invoice.total
+              : subTotal) - subTotal,
+            0,
+          ),
+        ),
+    0,
   );
-  const amountRemaining = Math.max(total - amountPaid, 0);
+  const total = Math.max(subTotal, 0);
+  const amountPaid = roundCurrency(
+    Math.max(
+      typeof invoice.amountPaid === 'number' && Number.isFinite(invoice.amountPaid)
+        ? invoice.amountPaid
+        : invoice.paymentStatus === 'PAID'
+          ? total
+          : 0,
+      0,
+    ),
+  );
+  const amountRemaining = roundCurrency(Math.max(total - amountPaid, 0));
   const paidLabel =
     invoice.paymentStatus === 'PART_PAID' ? 'Part paid' : 'Amount paid';
   const lineItemsTable = renderInvoiceLineItemsTable(invoice.services);
@@ -343,39 +373,44 @@ export function renderInvoiceDocumentHtml(
       :root { color-scheme: light; }
       html, body { margin: 0; padding: 0; }
       body {
-        background: #f8fafc;
+        background: #ffffff;
         color: #0f172a;
-        font-family: Helvetica, Arial, sans-serif;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 12px;
+        line-height: 1.4;
         -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
       }
       * {
+        box-sizing: border-box;
+        color-adjust: exact;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
       @page {
         size: Letter;
-        margin: 24px;
+        margin: 0.2in;
       }
       .invoice-shell {
         margin: 0;
-        padding: 24px;
-        background: #f8fafc;
+        padding: 16px;
+        background: #ffffff;
       }
       .invoice-card {
         margin: 0 auto;
         width: 100%;
         max-width: 760px;
-        border: 1px solid rgba(228,228,231,0.7);
-        border-radius: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 9px;
         background: #ffffff;
         color: #0f172a;
-        box-shadow: 0 1px 2px rgba(15,23,42,0.06);
-        padding: 20px;
+        box-shadow: none;
+        padding: 16px;
       }
       .invoice-header {
         display: flex;
         justify-content: space-between;
-        gap: 20px;
+        gap: 14px;
         width: 100%;
       }
       .header-col {
@@ -418,6 +453,23 @@ export function renderInvoiceDocumentHtml(
       .note-col-right {
         text-align: right;
       }
+      .line-item-group,
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .line-table-wrap {
+        width: 100%;
+        overflow: visible;
+      }
+      table {
+        border-collapse: collapse;
+        border-spacing: 0;
+        page-break-inside: auto;
+      }
+      thead {
+        display: table-header-group;
+      }
       @media only screen and (max-width: 720px) {
         .invoice-shell {
           padding: 16px !important;
@@ -448,6 +500,67 @@ export function renderInvoiceDocumentHtml(
         .note-col-right {
           margin-top: 12px !important;
         }
+        .line-table-wrap {
+          overflow-x: auto !important;
+        }
+      }
+      @media print {
+        html,
+        body,
+        .invoice-shell {
+          width: 100%;
+          background: #ffffff !important;
+        }
+        .invoice-shell {
+          padding: 10px !important;
+        }
+        .invoice-card {
+          max-width: none !important;
+          width: 100% !important;
+          border-color: #d1d5db !important;
+          border-radius: 8px !important;
+          box-shadow: none !important;
+          padding: 12px !important;
+        }
+        .invoice-header {
+          gap: 10px !important;
+        }
+        .invoice-logo-box {
+          padding: 5px 8px !important;
+        }
+        .invoice-logo {
+          max-width: 170px !important;
+        }
+        .invoice-title,
+        .invoice-meta,
+        .invoice-line-items,
+        .invoice-summary {
+          margin-top: 12px !important;
+        }
+        .line-item-group {
+          padding-top: 10px !important;
+        }
+        .line-table-wrap {
+          margin-top: 6px !important;
+          overflow: visible !important;
+        }
+        table {
+          min-width: 0 !important;
+          width: 100% !important;
+        }
+        th {
+          padding: 5px 6px !important;
+          font-size: 9.5px !important;
+          line-height: 1.15 !important;
+        }
+        td {
+          padding: 5px 6px !important;
+          font-size: 10.5px !important;
+          line-height: 1.25 !important;
+        }
+        .invoice-summary {
+          padding-top: 10px !important;
+        }
       }
     </style>
   </head>
@@ -464,7 +577,7 @@ export function renderInvoiceDocumentHtml(
               <p style="margin:2px 0 0;font-size:12px;line-height:1.45;color:#334155;">${escapeHtml(businessEmail)}</p>
             </div>
             <div class="header-col header-center">
-              <div style="display:inline-flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;background:rgba(248,250,252,0.7);padding:8px 12px;border-radius:6px;box-shadow:0 1px 2px rgba(15,23,42,0.06);">
+              <div class="invoice-logo-box" style="display:inline-flex;align-items:center;justify-content:center;border:1px solid #d8dee8;background:#f8fafc;padding:7px 10px;border-radius:6px;box-shadow:none;">
                 ${renderInvoiceLogo({
                   src: logoSrc,
                   alt: 'GMB Auto Logo',
@@ -482,10 +595,10 @@ export function renderInvoiceDocumentHtml(
               <p style="margin:2px 0 0;font-size:12px;line-height:1.45;color:#334155;">Service Writer: ${escapeHtml(serviceWriterName)}</p>
             </div>
           </div>
-          <p style="margin:14px 0 0;font-size:18px;line-height:1.2;font-weight:700;color:#0f172a;">${escapeHtml(invoice.title)}</p>
+          <p class="invoice-title" style="margin:12px 0 0;font-size:17px;line-height:1.15;font-weight:700;color:#0f172a;">${escapeHtml(invoice.title)}</p>
         </div>
 
-        <div style="margin-top:20px;" class="meta-grid">
+        <div style="margin-top:14px;" class="meta-grid invoice-meta">
           <div class="meta-col">
             <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;">Bill To</p>
             <p style="margin:4px 0 0;font-size:14px;color:#0f172a;">${escapeHtml(invoice.customerName)}</p>
@@ -506,36 +619,44 @@ export function renderInvoiceDocumentHtml(
 
         ${noteSections}
 
-        <div style="margin-top:20px;">
+        <div class="invoice-line-items" style="margin-top:14px;">
           ${lineItemsTable}
         </div>
 
-        <div style="display:flex;justify-content:flex-end;margin-top:20px;border-top:1px solid #e2e8f0;padding-top:16px;">
+        <div class="invoice-summary" style="display:flex;justify-content:flex-end;margin-top:14px;border-top:1px solid #d8dee8;padding-top:12px;">
           <div style="width:100%;max-width:320px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:14px;color:#64748b;">Labor subtotal</span>
-              <span style="font-size:14px;font-weight:500;color:#0f172a;">${formatCurrency(invoiceSummary.laborTotal)}</span>
+              <span style="font-size:13px;color:#64748b;">Labor subtotal</span>
+              <span style="font-size:13px;font-weight:500;color:#0f172a;">${formatCurrency(invoiceSummary.laborTotal)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-              <span style="font-size:14px;color:#64748b;">Parts subtotal</span>
-              <span style="font-size:14px;font-weight:500;color:#0f172a;">${formatCurrency(invoiceSummary.partsTotal)}</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
+              <span style="font-size:13px;color:#64748b;">Parts subtotal</span>
+              <span style="font-size:13px;font-weight:500;color:#0f172a;">${formatCurrency(invoiceSummary.partsTotal)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-              <span style="font-size:14px;color:#64748b;">Subtotal</span>
-              <span style="font-size:14px;font-weight:500;color:#0f172a;">${formatCurrency(subTotal)}</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
+              <span style="font-size:13px;color:#64748b;">Subtotal</span>
+              <span style="font-size:13px;font-weight:500;color:#0f172a;">${formatCurrency(subTotal)}</span>
             </div>
-
             ${
-              amountPaid > 0
-                ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-              <span style="font-size:14px;color:#64748b;">${escapeHtml(paidLabel)}</span>
-              <span style="font-size:14px;font-weight:500;color:#0f766e;">-${formatCurrency(amountPaid)}</span>
+              taxAmount > 0
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
+              <span style="font-size:13px;color:#64748b;">Tax included${taxRate > 0 ? ` (${escapeHtml(formatTaxRate(taxRate))}%)` : ''}</span>
+              <span style="font-size:13px;font-weight:500;color:#0f172a;">${formatCurrency(taxAmount)}</span>
             </div>`
                 : ''
             }
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
-              <span style="font-size:16px;font-weight:600;color:#0f172a;">Total due</span>
-              <span style="font-size:16px;font-weight:600;color:#0f172a;">${formatCurrency(amountRemaining)}</span>
+
+            ${
+              amountPaid > 0
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
+              <span style="font-size:13px;color:#64748b;">${escapeHtml(paidLabel)}</span>
+              <span style="font-size:13px;font-weight:500;color:#0f766e;">-${formatCurrency(amountPaid)}</span>
+            </div>`
+                : ''
+            }
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
+              <span style="font-size:15px;font-weight:600;color:#0f172a;">Total due</span>
+              <span style="font-size:15px;font-weight:600;color:#0f172a;">${formatCurrency(amountRemaining)}</span>
             </div>
           </div>
         </div>
