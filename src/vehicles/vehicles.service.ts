@@ -1,7 +1,9 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage } from 'mongoose';
@@ -21,7 +23,9 @@ import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { Vehicle, VehicleDocument } from './schemas/vehicle.schema';
 
 @Injectable()
-export class VehiclesService {
+export class VehiclesService implements OnModuleInit {
+  private readonly logger = new Logger(VehiclesService.name);
+
   constructor(
     @InjectModel(Vehicle.name)
     private readonly vehicleModel: Model<VehicleDocument>,
@@ -32,6 +36,10 @@ export class VehiclesService {
     @InjectModel(AuditLog.name)
     private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
+
+  async onModuleInit() {
+    await this.ensureVehicleIdentifierIndexes();
+  }
 
   async create(payload: CreateVehicleDto) {
     const customer = await this.customerModel
@@ -339,7 +347,17 @@ export class VehiclesService {
     query: ListVehiclesQueryDto,
     options?: { skip?: number; limit?: number },
   ): PipelineStage[] {
-    const pipeline: PipelineStage[] = [
+    const pipeline: PipelineStage[] = [];
+
+    if (query.is_archived !== undefined) {
+      pipeline.push({
+        $match: {
+          is_archived: query.is_archived,
+        },
+      });
+    }
+
+    pipeline.push(
       {
         $lookup: {
           from: 'customers',
@@ -354,7 +372,7 @@ export class VehiclesService {
           preserveNullAndEmptyArrays: true,
         },
       },
-    ];
+    );
 
     const trimmedSearch = query.search?.trim();
     if (trimmedSearch) {
@@ -475,6 +493,240 @@ export class VehiclesService {
 
   private toIsoString(value?: Date) {
     return value?.toISOString();
+  }
+
+  private async ensureVehicleIdentifierIndexes() {
+    const collection = this.vehicleModel.collection;
+    const existingIndexes = await collection.indexes();
+
+    const vinIndex = existingIndexes.find((index) => index.name === 'vin_1');
+    const licensePlateIndex = existingIndexes.find(
+      (index) => index.name === 'license_plate_1',
+    );
+
+    const needsVinRepair = !this.hasNullableIdentifierIndex(vinIndex, 'vin');
+    const needsLicensePlateRepair = !this.hasNullableIdentifierIndex(
+      licensePlateIndex,
+      'license_plate',
+    );
+
+    if (!needsVinRepair && !needsLicensePlateRepair) {
+      return;
+    }
+
+    const dropped: string[] = [];
+
+    for (const [indexName, needsRepair] of [
+      ['vin_1', needsVinRepair],
+      ['license_plate_1', needsLicensePlateRepair],
+    ] as const) {
+      if (!needsRepair) {
+        continue;
+      }
+
+      if (existingIndexes.some((index) => index.name === indexName)) {
+        try {
+          await collection.dropIndex(indexName);
+          dropped.push(indexName);
+        } catch (error) {
+          if (!this.isVehicleIndexMissingError(error)) {
+            const repairedByPeer = await this.waitForNullableIdentifierIndex(
+              collection,
+              indexName === 'vin_1' ? 'vin' : 'license_plate',
+              indexName,
+            );
+            if (!repairedByPeer) {
+              throw error;
+            }
+          }
+        }
+      }
+    }
+
+    await collection.updateMany(
+      {},
+      [
+        {
+          $set: {
+            vin: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$vin', ''] },
+                    { $eq: ['$vin', null] },
+                  ],
+                },
+                null,
+                '$vin',
+              ],
+            },
+            license_plate: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$license_plate', ''] },
+                    { $eq: ['$license_plate', null] },
+                  ],
+                },
+                null,
+                '$license_plate',
+              ],
+            },
+          },
+        },
+        {
+          $set: {
+            is_incomplete: {
+              $or: [
+                { $eq: ['$vin', null] },
+                { $eq: ['$license_plate', null] },
+              ],
+            },
+          },
+        },
+      ],
+    );
+
+    const created: string[] = [];
+
+    if (needsVinRepair) {
+      const createdVinIndex = await this.ensureNullableIdentifierIndex(
+        collection,
+        'vin',
+        'vin_1',
+      );
+      if (createdVinIndex) {
+        created.push('vin_1');
+      }
+    }
+
+    if (needsLicensePlateRepair) {
+      const createdLicensePlateIndex = await this.ensureNullableIdentifierIndex(
+        collection,
+        'license_plate',
+        'license_plate_1',
+      );
+      if (createdLicensePlateIndex) {
+        created.push('license_plate_1');
+      }
+    }
+
+    this.logger.warn(
+      `Repaired vehicle identifier indexes. Dropped: ${dropped.join(', ') || 'none'}. Created: ${created.join(', ') || 'none'}.`,
+    );
+  }
+
+  private hasNullableIdentifierIndex(
+    index:
+      | {
+          unique?: boolean;
+          partialFilterExpression?: Record<string, unknown>;
+        }
+      | undefined,
+    field: 'vin' | 'license_plate',
+  ) {
+    if (!index?.unique) {
+      return false;
+    }
+
+    const filter = index.partialFilterExpression;
+    if (!filter || typeof filter !== 'object') {
+      return false;
+    }
+
+    const fieldFilter = filter[field];
+    if (!fieldFilter || typeof fieldFilter !== 'object') {
+      return false;
+    }
+
+    return '$type' in fieldFilter && fieldFilter.$type === 'string';
+  }
+
+  private async ensureNullableIdentifierIndex(
+    collection: Pick<
+      Model<VehicleDocument>['collection'],
+      'createIndex' | 'indexes'
+    >,
+    field: 'vin' | 'license_plate',
+    indexName: 'vin_1' | 'license_plate_1',
+  ) {
+    try {
+      if (field === 'vin') {
+        await collection.createIndex(
+          { vin: 1 },
+          {
+            name: indexName,
+            unique: true,
+            partialFilterExpression: {
+              vin: { $type: 'string' },
+            },
+          },
+        );
+      } else {
+        await collection.createIndex(
+          { license_plate: 1 },
+          {
+            name: indexName,
+            unique: true,
+            partialFilterExpression: {
+              license_plate: { $type: 'string' },
+            },
+          },
+        );
+      }
+      return true;
+    } catch (error) {
+      const repairedByPeer = await this.waitForNullableIdentifierIndex(
+        collection,
+        field,
+        indexName,
+      );
+      if (repairedByPeer) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  private async waitForNullableIdentifierIndex(
+    collection: Pick<Model<VehicleDocument>['collection'], 'indexes'>,
+    field: 'vin' | 'license_plate',
+    indexName: 'vin_1' | 'license_plate_1',
+    attempts = 4,
+  ) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const currentIndexes = await collection.indexes();
+      const currentIndex = currentIndexes.find(
+        (index) => index.name === indexName,
+      );
+      if (this.hasNullableIdentifierIndex(currentIndex, field)) {
+        return true;
+      }
+
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+
+    return false;
+  }
+
+  private isVehicleIndexMissingError(error: unknown) {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const code =
+      'code' in error && typeof error.code === 'number'
+        ? error.code
+        : null;
+    const codeName =
+      'codeName' in error && typeof error.codeName === 'string'
+        ? error.codeName
+        : null;
+
+    return code === 27 || codeName === 'IndexNotFound';
   }
 
   private escapeRegex(value: string) {

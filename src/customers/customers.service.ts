@@ -40,7 +40,7 @@ export class CustomersService {
   }
 
   async findAll(query: ListCustomersQueryDto = {}) {
-    const searchQuery = this.buildSearchQuery(query.search);
+    const searchQuery = this.buildListQuery(query);
 
     const customers = await this.customerModel
       .find(searchQuery)
@@ -51,7 +51,7 @@ export class CustomersService {
   }
 
   async findPage(query: ListCustomersQueryDto = {}) {
-    const searchQuery = this.buildSearchQuery(query.search);
+    const searchQuery = this.buildListQuery(query);
     const page = query.page ?? 1;
     const pageSize = query.page_size ?? 25;
     const skip = (page - 1) * pageSize;
@@ -268,6 +268,18 @@ export class CustomersService {
 
   private toIsoString(value?: Date) {
     return value?.toISOString();
+  }
+
+  private buildListQuery(query: ListCustomersQueryDto) {
+    const searchQuery = this.buildSearchQuery(query.search);
+    if (query.is_archived === undefined) {
+      return searchQuery;
+    }
+
+    return {
+      ...searchQuery,
+      is_archived: query.is_archived,
+    };
   }
 
   private buildSearchQuery(search?: string) {

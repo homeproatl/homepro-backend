@@ -108,6 +108,26 @@ describe('CustomersService', () => {
     });
   });
 
+  it('applies archive-state filtering to customer lists', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ exec });
+    const find = jest.fn().mockReturnValue({ sort });
+    const service = new CustomersService(
+      {
+        find,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.findAll({ is_archived: true });
+
+    expect(find).toHaveBeenCalledWith({
+      is_archived: true,
+    });
+  });
+
   it('blocks customer deletion while vehicles or estimates still reference the customer', async () => {
     const customer = {
       _id: '507f1f77bcf86cd799439011',

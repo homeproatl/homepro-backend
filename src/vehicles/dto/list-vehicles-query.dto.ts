@@ -53,6 +53,11 @@ export class ListVehiclesQueryDto {
   @IsOptional()
   @Transform(({ value }) => transformBoolean(value))
   @IsBoolean()
+  is_archived?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => transformBoolean(value))
+  @IsBoolean()
   paginated?: boolean;
 
   @IsOptional()
