@@ -113,7 +113,10 @@ describe('EstimateDataService', () => {
       expect.objectContaining({
         labor_total: 100,
         parts_total: 35,
-        total: 135,
+        subtotal: 135,
+        tax_rate: 8.875,
+        tax_amount: 11.98,
+        total: 146.98,
         services: [
           expect.objectContaining({
             canned_service_id: 'svc-1',
@@ -131,7 +134,7 @@ describe('EstimateDataService', () => {
     );
   });
 
-  it('preserves provided estimate tax totals when creating an estimate', async () => {
+  it('derives estimate tax totals from service rows when creating an estimate', async () => {
     const create = jest.fn().mockResolvedValue({ id: 'estimate-1' });
     const service = createService({
       customerModel: {
@@ -175,10 +178,10 @@ describe('EstimateDataService', () => {
       title: 'Front Wheel Bearing',
       customer_id: 'customer-1',
       vehicle_id: 'vehicle-1',
-      subtotal: 460,
+      subtotal: 1,
       tax_rate: 8.875,
-      tax_amount: 40.83,
-      total: 500.83,
+      tax_amount: 1,
+      total: 1,
       services: [
         {
           name: 'Front Wheel Bearing',
@@ -210,7 +213,7 @@ describe('EstimateDataService', () => {
         subtotal: 460,
         tax_rate: 8.875,
         tax_amount: 40.83,
-        total: 460,
+        total: 500.83,
       }),
     );
   });
@@ -644,7 +647,7 @@ describe('EstimateDataService', () => {
     ).resolves.toBe(estimate);
   });
 
-  it('preserves provided estimate tax totals when updating an estimate', async () => {
+  it('derives estimate tax totals from service rows when updating an estimate', async () => {
     const save = jest.fn().mockResolvedValue(undefined);
     const service = createService({
       customerModel: {
@@ -709,10 +712,10 @@ describe('EstimateDataService', () => {
       title: 'Front Wheel Bearing',
       customer_id: 'customer-1',
       vehicle_id: 'vehicle-1',
-      subtotal: 460,
+      subtotal: 1,
       tax_rate: 8.875,
-      tax_amount: 40.83,
-      total: 500.83,
+      tax_amount: 1,
+      total: 1,
       services: [
         {
           name: 'Front Wheel Bearing',
@@ -742,7 +745,7 @@ describe('EstimateDataService', () => {
     expect(estimate.subtotal).toBe(460);
     expect(estimate.tax_rate).toBe(8.875);
     expect(estimate.tax_amount).toBe(40.83);
-    expect(estimate.total).toBe(460);
+    expect(estimate.total).toBe(500.83);
   });
 
   it('allows admin users on labor lines', async () => {

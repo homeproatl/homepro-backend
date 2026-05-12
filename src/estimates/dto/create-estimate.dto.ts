@@ -220,7 +220,9 @@ export class EstimateSourceMetadataDto {
 }
 
 export class CreateEstimateDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
   title!: string;
 
@@ -265,6 +267,10 @@ export class CreateEstimateDto {
   @IsOptional()
   @IsDateString()
   due_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  created_at?: string;
 
   @IsOptional()
   @Type(() => Number)

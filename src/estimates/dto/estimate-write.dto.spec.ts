@@ -167,6 +167,76 @@ describe('estimate write DTOs', () => {
     ).rejects.toThrow();
   });
 
+  it('trims estimate titles and rejects blank titles', async () => {
+    const transformed = (await pipe.transform(
+      {
+        title: '  Brake Inspection  ',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        services: [
+          {
+            name: 'Brake Service',
+            labor_lines: [],
+            part_lines: [
+              {
+                name: 'Brake pad set',
+                quantity: 1,
+                price: 80,
+                discount_percent: 0,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: 'body',
+        metatype: CreateEstimateDto,
+      },
+    )) as CreateEstimateDto;
+
+    expect(transformed.title).toBe('Brake Inspection');
+
+    await expect(
+      pipe.transform(
+        {
+          title: '   ',
+          customer_id: '507f1f77bcf86cd799439011',
+          vehicle_id: '507f1f77bcf86cd799439012',
+          services: [
+            {
+              name: 'Brake Service',
+              labor_lines: [],
+              part_lines: [
+                {
+                  name: 'Brake pad set',
+                  quantity: 1,
+                  price: 80,
+                  discount_percent: 0,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'body',
+          metatype: CreateEstimateDto,
+        },
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      pipe.transform(
+        {
+          title: '   ',
+        },
+        {
+          type: 'body',
+          metatype: UpdateEstimateDto,
+        },
+      ),
+    ).rejects.toThrow();
+  });
+
   it('trims and rejects blank labor and part labels', async () => {
     await expect(
       pipe.transform(

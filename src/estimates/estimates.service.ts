@@ -140,6 +140,12 @@ export class EstimatesService {
   ) {}
 
   async create(payload: CreateEstimateDto, actorUserId?: string) {
+    const requestedCreatedAt =
+      payload.created_at === undefined ? null : new Date(payload.created_at);
+    if (requestedCreatedAt && Number.isNaN(requestedCreatedAt.getTime())) {
+      throw new BadRequestException('Invalid created date');
+    }
+
     const created = await this.createEstimateWithUniqueNumber({
       title: payload.title,
       customer_id: payload.customer_id,
@@ -165,6 +171,10 @@ export class EstimatesService {
       services: payload.services,
     });
 
+    if (requestedCreatedAt) {
+      (created as unknown as { created_at: Date }).created_at =
+        requestedCreatedAt;
+    }
     created.amount_paid =
       created.payment_status === PaidStatus.PAID ? created.total : 0;
     this.syncPaymentState(created);
@@ -179,7 +189,7 @@ export class EstimatesService {
       after: created.toObject(),
     });
 
-    return this.withDerivedEstimate(created);
+    return this.withBillingSummary(created);
   }
 
   async findAll(filters: ListEstimatesQueryDto = {}) {
@@ -380,6 +390,12 @@ export class EstimatesService {
       );
     }
 
+    const nextCreatedAt =
+      payload.created_at === undefined ? null : new Date(payload.created_at);
+    if (nextCreatedAt && Number.isNaN(nextCreatedAt.getTime())) {
+      throw new BadRequestException('Invalid created date');
+    }
+
     const before = estimate.toObject();
     const currentServices = estimate.services.map((service) => ({
       canned_service_id: service.canned_service_id
@@ -482,6 +498,9 @@ export class EstimatesService {
           : payload.total,
       services: payload.services ?? currentServices,
     });
+    if (nextCreatedAt) {
+      (estimate as unknown as { created_at: Date }).created_at = nextCreatedAt;
+    }
     this.syncPaymentState(estimate);
     await estimate.save();
 
@@ -495,7 +514,7 @@ export class EstimatesService {
     });
     await this.estimateInvoiceService.markLatestSnapshotStaleIfNeeded(id);
 
-    return this.withDerivedEstimate(estimate);
+    return this.withBillingSummary(estimate);
   }
 
   async updateStatus(
@@ -534,7 +553,7 @@ export class EstimatesService {
       after: estimate.toObject(),
     });
 
-    return this.withDerivedEstimate(estimate);
+    return this.withBillingSummary(estimate);
   }
 
   async updatePaymentStatus(
@@ -619,7 +638,7 @@ export class EstimatesService {
     });
     await this.estimateInvoiceService.markLatestSnapshotStaleIfNeeded(id);
 
-    return this.withDerivedEstimate(estimate);
+    return this.withBillingSummary(estimate);
   }
 
   async calendar(filters: {
@@ -891,6 +910,29 @@ export class EstimatesService {
     }).amount_remaining;
   }
 
+  private resolvePaymentStatusFromBalance(
+    total: number,
+    amountPaid: number,
+    currentStatus?: PaidStatus,
+  ) {
+    if (
+      currentStatus === PaidStatus.PART_PAID &&
+      amountPaid <= 0 &&
+      total > 0
+    ) {
+      return PaidStatus.PART_PAID;
+    }
+
+    const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
+    if (amountRemaining === 0 && total > 0) {
+      return PaidStatus.PAID;
+    }
+    if (amountPaid > 0) {
+      return PaidStatus.PART_PAID;
+    }
+    return PaidStatus.UNPAID;
+  }
+
   private syncPaymentState(
     estimate: EstimateDocument,
     options?: {
@@ -914,17 +956,11 @@ export class EstimatesService {
       options,
     );
     estimate.amount_paid = amountPaid;
-    const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
-
-    if (amountRemaining === 0 && total > 0) {
-      estimate.payment_status = PaidStatus.PAID;
-      return;
-    }
-    if (amountPaid > 0) {
-      estimate.payment_status = PaidStatus.PART_PAID;
-      return;
-    }
-    estimate.payment_status = PaidStatus.UNPAID;
+    estimate.payment_status = this.resolvePaymentStatusFromBalance(
+      total,
+      amountPaid,
+      estimate.payment_status ?? PaidStatus.UNPAID,
+    );
   }
 
   private appendPaymentEvent(
@@ -1022,14 +1058,21 @@ export class EstimatesService {
       { applyDefaultTaxWhenMissing: true },
     );
     const total = estimateTotals.total;
-    const paymentStatus = rawEstimate.payment_status as PaidStatus;
+    const rawPaymentStatus =
+      (rawEstimate.payment_status as PaidStatus | undefined) ??
+      PaidStatus.UNPAID;
     const amountPaid = this.resolveAmountPaid(
       rawEstimate.amount_paid as number | undefined,
       total,
-      paymentStatus,
+      rawPaymentStatus,
       rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
     );
     const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
+    const paymentStatus = this.resolvePaymentStatusFromBalance(
+      total,
+      amountPaid,
+      rawPaymentStatus,
+    );
     const isOverdue =
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
@@ -1124,16 +1167,21 @@ export class EstimatesService {
       { applyDefaultTaxWhenMissing: true },
     );
     const total = estimateTotals.total;
-    const paymentStatus =
+    const rawPaymentStatus =
       (rawEstimate.payment_status as PaidStatus | undefined) ??
       PaidStatus.UNPAID;
     const amountPaid = this.resolveAmountPaid(
       rawEstimate.amount_paid as number | undefined,
       total,
-      paymentStatus,
+      rawPaymentStatus,
       rawEstimate.payment_events as EstimatePaymentEventRecord[] | undefined,
     );
     const amountRemaining = this.resolveAmountRemaining(total, amountPaid);
+    const paymentStatus = this.resolvePaymentStatusFromBalance(
+      total,
+      amountPaid,
+      rawPaymentStatus,
+    );
     const isOverdue =
       !!dueDate &&
       dueDate.getTime() < Date.now() &&
@@ -1442,6 +1490,15 @@ export class EstimatesService {
     );
   }
 
+  private async withBillingSummary(
+    estimate: EstimateDocument | (Estimate & { _id: unknown }),
+  ) {
+    const [estimateWithBillingSummary] = await this.withBillingSummaries([
+      estimate,
+    ]);
+    return estimateWithBillingSummary;
+  }
+
   private async withBillingSummariesForList(estimates: EstimateListRecord[]) {
     if (estimates.length === 0) {
       return [];
@@ -1462,6 +1519,21 @@ export class EstimatesService {
             { applyDefaultTaxWhenMissing: true },
           );
 
+          const rawPaymentStatus =
+            estimate.payment_status ?? PaidStatus.UNPAID;
+          const amountPaid = this.resolveAmountPaid(
+            typeof estimate.amount_paid === 'number'
+              ? estimate.amount_paid
+              : undefined,
+            estimateTotals.total,
+            rawPaymentStatus,
+          );
+          const paymentStatus = this.resolvePaymentStatusFromBalance(
+            estimateTotals.total,
+            amountPaid,
+            rawPaymentStatus,
+          );
+
           return {
             estimate_id: this.serializeId(estimate._id, 'estimate id'),
             customer_id: this.serializeId(estimate.customer_id, 'customer id'),
@@ -1470,9 +1542,8 @@ export class EstimatesService {
               typeof estimate.services_count === 'number'
                 ? estimate.services_count
                 : 0,
-            payment_status: estimate.payment_status ?? PaidStatus.UNPAID,
-            amount_paid:
-              typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0,
+            payment_status: paymentStatus,
+            amount_paid: amountPaid,
           };
         }),
       );
@@ -1666,7 +1737,7 @@ export class EstimatesService {
         this.compareEstimateListItems(
           left,
           right,
-          filters.sort ?? 'nearest_upcoming',
+          filters.sort ?? 'newest',
           nowMs,
         ),
       );
@@ -2043,7 +2114,7 @@ export class EstimatesService {
       });
     }
 
-    if ((filters.sort ?? 'nearest_upcoming') === 'newest') {
+    if ((filters.sort ?? 'newest') === 'newest') {
       pipeline.push({
         $sort: {
           created_at: -1,

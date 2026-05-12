@@ -677,6 +677,13 @@ describe('EstimateInvoiceService', () => {
 
     expect(html).toContain('Invoice');
     expect(html).toContain('GMB Auto');
+    expect(html).toContain('class="invoice-logo"');
+    expect(html).toContain('align-items: center;');
+    expect(html).toContain(
+      'width:250px;max-width:100%;height:auto;object-fit:contain;',
+    );
+    expect(html).not.toContain('invoice-logo-box');
+    expect(html).not.toContain('background:#f8fafc;padding:7px 10px');
     expect(html).toContain('301 Elmont Rd');
     expect(html).toContain('Elmont, NY 11003');
     expect(html).toContain('(646) 807-6937');
@@ -701,10 +708,10 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('PART USED');
     expect(html).toContain('Labor subtotal');
     expect(html).toContain('Parts subtotal');
-    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('Tax (8.875%)');
     expect(html).toContain('$11.98');
     expect(html).toContain('Total due');
-    expect(html).toContain('$135.00');
+    expect(html).toContain('$146.98');
     expect(html).toContain('Brake Service');
     expect(html).toContain('Brake labor');
     expect(html).toContain(
@@ -844,7 +851,7 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('$230.00');
   });
 
-  it('renders included tax without increasing the remaining balance for paid invoices', () => {
+  it('renders tax as part of the remaining invoice balance', () => {
     const html = renderInvoiceDocumentHtml({
       invoiceNumber: 'INV-654322',
       estimateNumber: 'EST-002B',
@@ -904,15 +911,15 @@ describe('EstimateInvoiceService', () => {
 
     expect(html).toContain('Subtotal');
     expect(html).toContain('$460.00');
-    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('Tax (8.875%)');
     expect(html).toContain('$40.83');
     expect(html).toContain('Part paid');
     expect(html).toContain('-$460.00');
     expect(html).toContain('Total due');
-    expect(html).toContain('$0.00');
+    expect(html).toContain('$40.83');
   });
 
-  it('renders preserved included tax without increasing total due when the stored estimate total equals the subtotal', () => {
+  it('adds preserved tax to total due when the stored estimate total equals the subtotal', () => {
     const html = renderInvoiceDocumentHtml({
       invoiceNumber: 'INV-654323',
       estimateNumber: 'EST-002C',
@@ -972,12 +979,12 @@ describe('EstimateInvoiceService', () => {
 
     expect(html).toContain('Subtotal');
     expect(html).toContain('$460.00');
-    expect(html).toContain('Tax included (8.875%)');
+    expect(html).toContain('Tax (8.875%)');
     expect(html).toContain('$40.83');
     expect(html).toContain('Amount paid');
     expect(html).toContain('-$460.00');
     expect(html).toContain('Total due');
-    expect(html).toContain('$0.00');
+    expect(html).toContain('$40.83');
   });
 
   it('preserves recorded overpayments on invoices while recomputing the remaining balance from job total billing', () => {
@@ -1235,9 +1242,82 @@ describe('EstimateInvoiceService', () => {
     });
 
     expect(result).toMatchObject({
-      total: 460,
+      total: 500.83,
       amount_paid_snapshot: 500.83,
       amount_remaining_snapshot: 0,
+      payment_status_snapshot: 'PAID',
+    });
+  });
+
+  it('serializes stale paid invoice snapshots as part paid when tax leaves a balance', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        serializeSnapshot: (snapshot: {
+          toObject: () => Record<string, unknown>;
+        }) => Record<string, unknown>;
+      }
+    ).serializeSnapshot({
+      toObject: () => ({
+        _id: 'snapshot-legacy-2',
+        estimate_id: 'estimate-1',
+        invoice_number: 'INV-102',
+        revision_number: 4,
+        status: 'SENT',
+        customer_snapshot: {
+          customer_id: 'customer-1',
+          name: 'Rico Customer',
+          email: 'customer@example.com',
+          phone: '123',
+        },
+        vehicle_snapshot: {
+          vehicle_id: 'vehicle-1',
+          label: '2020 Honda Accord',
+          vin: 'VIN123',
+          license_plate: 'ABC123',
+        },
+        services_snapshot: [
+          {
+            estimate_service_id: 'service-1',
+            canned_service_id: null,
+            name: 'Legacy Service',
+            labor_lines: [],
+            part_lines: [],
+            labor_total: 260,
+            parts_total: 200,
+            total: 460,
+          },
+        ],
+        estimate_number_snapshot: 'EST-102',
+        title_snapshot: 'Legacy Paid Without Tax',
+        time_zone_snapshot: 'America/New_York',
+        subtotal_snapshot: 460,
+        tax_rate_snapshot: 8.875,
+        tax_amount_snapshot: 40.83,
+        total: 460,
+        amount_paid_snapshot: 460,
+        amount_remaining_snapshot: 0,
+        payment_status_snapshot: 'PAID',
+        payment_type_snapshot: 'POS_CARD',
+        due_date_snapshot: null,
+        scheduled_start_snapshot: null,
+        scheduled_end_snapshot: null,
+        billable_hash: 'hash-legacy-2',
+        issued_at: '2026-04-03T08:00:00.000Z',
+        sent_at: '2026-04-03T08:05:00.000Z',
+        stale_at: null,
+        superseded_by_snapshot_id: null,
+        created_at: '2026-04-03T08:00:00.000Z',
+        updated_at: '2026-04-03T08:05:00.000Z',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      total: 500.83,
+      amount_paid_snapshot: 460,
+      amount_remaining_snapshot: 40.83,
+      payment_status_snapshot: 'PART_PAID',
     });
   });
 

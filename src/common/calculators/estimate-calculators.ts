@@ -79,7 +79,7 @@ export type CalculatedEstimatePaymentState = {
   amount_remaining: number;
 };
 
-export const DEFAULT_ESTIMATE_TAX_RATE_PERCENT = 0;
+export const DEFAULT_ESTIMATE_TAX_RATE_PERCENT = 8.875;
 
 function roundCurrency(value: number): number {
   return Number((value + 1e-9).toFixed(2));
@@ -239,14 +239,16 @@ export function calculateEstimateTotals(
   const subtotal = roundCurrency(
     services.reduce((sum, service) => sum + service.total, 0),
   );
+  const tax_rate = DEFAULT_ESTIMATE_TAX_RATE_PERCENT;
+  const tax_amount = roundCurrency(subtotal * (tax_rate / 100));
 
   return {
     labor_total,
     parts_total,
     subtotal,
-    tax_rate: 0,
-    tax_amount: 0,
-    total: subtotal,
+    tax_rate,
+    tax_amount,
+    total: roundCurrency(subtotal + tax_amount),
   };
 }
 
@@ -282,7 +284,7 @@ export function resolveEstimateTotals(input: {
         : providedTotal !== null && providedTotal > resolvedSubtotal
           ? roundCurrency(providedTotal - resolvedSubtotal)
           : 0;
-  const total = resolvedSubtotal;
+  const total = roundCurrency(resolvedSubtotal + tax_amount);
 
   return {
     labor_total,

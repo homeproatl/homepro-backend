@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   ArrayMaxSize,
@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  MinLength,
   Min,
   MaxLength,
   ValidateNested,
@@ -21,7 +22,9 @@ import {
 
 export class UpdateEstimateDto {
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
   title?: string;
 
@@ -64,6 +67,10 @@ export class UpdateEstimateDto {
   @IsOptional()
   @IsDateString()
   due_date?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  created_at?: string;
 
   @IsOptional()
   @Type(() => Number)

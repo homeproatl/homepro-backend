@@ -46,7 +46,7 @@ describe('estimate calculators', () => {
     });
   });
 
-  it('computes the final estimate total without tax', () => {
+  it('computes the final estimate total with the default shop tax', () => {
     expect(
       calculateEstimateTotals([
         { labor_total: 200, parts_total: 50, total: 250 },
@@ -56,9 +56,9 @@ describe('estimate calculators', () => {
       labor_total: 300,
       parts_total: 75,
       subtotal: 375,
-      tax_rate: 0,
-      tax_amount: 0,
-      total: 375,
+      tax_rate: 8.875,
+      tax_amount: 33.28,
+      total: 408.28,
     });
   });
 
@@ -79,7 +79,7 @@ describe('estimate calculators', () => {
     });
   });
 
-  it('resolves totals with applyDefaultTaxWhenMissing producing no tax', () => {
+  it('resolves totals with applyDefaultTaxWhenMissing using the default shop tax', () => {
     expect(
       resolveEstimateTotals(
         {
@@ -93,13 +93,13 @@ describe('estimate calculators', () => {
       labor_total: 260,
       parts_total: 200,
       subtotal: 460,
-      tax_rate: 0,
-      tax_amount: 0,
-      total: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
+      total: 500.83,
     });
   });
 
-  it('derives included tax from a higher stored total without adding it to the estimate total', () => {
+  it('derives tax from rate and adds it to the estimate total', () => {
     expect(
       resolveEstimateTotals({
         labor_total: 260,
@@ -114,11 +114,11 @@ describe('estimate calculators', () => {
       subtotal: 460,
       tax_rate: 8.875,
       tax_amount: 40.83,
-      total: 460,
+      total: 500.83,
     });
   });
 
-  it('preserves included tax when the stored total already equals the subtotal', () => {
+  it('corrects legacy totals that equal subtotal by adding tax', () => {
     expect(
       resolveEstimateTotals({
         labor_total: 260,
@@ -134,15 +134,15 @@ describe('estimate calculators', () => {
       subtotal: 460,
       tax_rate: 8.875,
       tax_amount: 40.83,
-      total: 460,
+      total: 500.83,
     });
   });
 
-  it('preserves recorded overpayments while recomputing the remaining balance from job total billing', () => {
+  it('preserves recorded overpayments while recomputing the remaining balance from tax-inclusive billing', () => {
     expect(
       resolveEstimatePaymentState({
         amount_paid: 500.83,
-        total: 460,
+        total: 500.83,
         payment_status: 'PAID',
       }),
     ).toEqual({
@@ -151,8 +151,8 @@ describe('estimate calculators', () => {
     });
   });
 
-  it('has a default tax rate of zero', () => {
-    expect(DEFAULT_ESTIMATE_TAX_RATE_PERCENT).toBe(0);
+  it('has a default tax rate of 8.875 percent', () => {
+    expect(DEFAULT_ESTIMATE_TAX_RATE_PERCENT).toBe(8.875);
   });
 
   it('rejects invalid discount values', () => {

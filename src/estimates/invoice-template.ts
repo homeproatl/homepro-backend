@@ -176,7 +176,7 @@ function renderInvoiceLogo(input: {
   maxWidth: number;
   marginBottom: number;
 }) {
-  return `<img class="invoice-logo" src="${escapeHtml(input.src)}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:100%;max-width:${input.maxWidth}px;height:auto;margin:0 0 ${input.marginBottom}px;" />`;
+  return `<img class="invoice-logo" src="${escapeHtml(input.src)}" alt="${escapeHtml(input.alt)}" width="${input.maxWidth}" style="display:block;width:${input.maxWidth}px;max-width:100%;height:auto;object-fit:contain;margin:0 0 ${input.marginBottom}px;" />`;
 }
 
 function summarizeServices(services: InvoiceDocumentServiceGroup[]) {
@@ -337,7 +337,15 @@ export function renderInvoiceDocumentHtml(
         ),
     0,
   );
-  const total = Math.max(subTotal, 0);
+  const minimumTotal = roundCurrency(subTotal + taxAmount);
+  const total = roundCurrency(
+    Math.max(
+      typeof invoice.total === 'number' && Number.isFinite(invoice.total)
+        ? invoice.total
+        : minimumTotal,
+      minimumTotal,
+    ),
+  );
   const amountPaid = roundCurrency(
     Math.max(
       typeof invoice.amountPaid === 'number' && Number.isFinite(invoice.amountPaid)
@@ -422,6 +430,7 @@ export function renderInvoiceDocumentHtml(
       }
       .header-center {
         display: flex;
+        align-items: center;
         justify-content: center;
       }
       .header-right {
@@ -525,11 +534,8 @@ export function renderInvoiceDocumentHtml(
         .invoice-header {
           gap: 10px !important;
         }
-        .invoice-logo-box {
-          padding: 5px 8px !important;
-        }
         .invoice-logo {
-          max-width: 170px !important;
+          max-width: 250px !important;
         }
         .invoice-title,
         .invoice-meta,
@@ -577,14 +583,12 @@ export function renderInvoiceDocumentHtml(
               <p style="margin:2px 0 0;font-size:12px;line-height:1.45;color:#334155;">${escapeHtml(businessEmail)}</p>
             </div>
             <div class="header-col header-center">
-              <div class="invoice-logo-box" style="display:inline-flex;align-items:center;justify-content:center;border:1px solid #d8dee8;background:#f8fafc;padding:7px 10px;border-radius:6px;box-shadow:none;">
-                ${renderInvoiceLogo({
-                  src: logoSrc,
-                  alt: 'GMB Auto Logo',
-                  maxWidth: 220,
-                  marginBottom: 0,
-                })}
-              </div>
+              ${renderInvoiceLogo({
+                src: logoSrc,
+                alt: 'GMB Auto Logo',
+                maxWidth: 250,
+                marginBottom: 0,
+              })}
             </div>
             <div class="header-col header-right">
               <p style="margin:0;font-size:14px;font-weight:700;color:#0f172a;">Invoice #${escapeHtml(invoice.invoiceNumber)}</p>
@@ -640,7 +644,7 @@ export function renderInvoiceDocumentHtml(
             ${
               taxAmount > 0
                 ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
-              <span style="font-size:13px;color:#64748b;">Tax included${taxRate > 0 ? ` (${escapeHtml(formatTaxRate(taxRate))}%)` : ''}</span>
+              <span style="font-size:13px;color:#64748b;">Tax${taxRate > 0 ? ` (${escapeHtml(formatTaxRate(taxRate))}%)` : ''}</span>
               <span style="font-size:13px;font-weight:500;color:#0f172a;">${formatCurrency(taxAmount)}</span>
             </div>`
                 : ''

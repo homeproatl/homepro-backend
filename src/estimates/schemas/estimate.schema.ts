@@ -301,6 +301,7 @@ export class Estimate {
 }
 
 export const EstimateSchema = SchemaFactory.createForClass(Estimate);
+EstimateSchema.path('created_at')?.immutable(false);
 
 EstimateSchema.index({
   assigned_user_id: 1,

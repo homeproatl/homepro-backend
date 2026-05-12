@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
+import { existsSync } from 'fs';
 import { ClientSession, Model } from 'mongoose';
 import puppeteer, { type Browser } from 'puppeteer';
 import { Resend } from 'resend';
@@ -216,6 +217,15 @@ const PUBLIC_MAILBOX_DOMAINS = new Set([
 
 const RECENT_INVOICE_DISPATCH_WINDOW_MS = 2 * 60 * 1000;
 const EMPTY_INVOICE_NOTE_VALUES = new Set(['-', '—', '--', 'n/a', 'na', 'none']);
+const PDF_BROWSER_EXECUTABLE_CANDIDATES = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+];
 const CUSTOMER_EMAIL_INVOICE_BLOCKER =
   'Customer email is required before an invoice can be issued or sent.';
 const BILLABLE_INVOICE_BLOCKER =
@@ -791,6 +801,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       total,
       payment_status: estimate.payment_status,
     });
+    const paymentStatus = this.resolvePaymentStatusFromBalance(
+      total,
+      paymentState.amount_paid,
+      estimate.payment_status,
+    );
 
     const payload: InvoiceDocumentPayload = {
       estimate_id: String(estimate._id),
@@ -810,7 +825,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       total,
       amount_paid_snapshot: paymentState.amount_paid,
       amount_remaining_snapshot: paymentState.amount_remaining,
-      payment_status_snapshot: estimate.payment_status,
+      payment_status_snapshot: paymentStatus,
       payment_type_snapshot: estimate.payment_type,
       due_date_snapshot: estimate.due_date ? estimate.due_date.toISOString() : null,
       scheduled_start_snapshot: estimate.scheduled_start
@@ -826,7 +841,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     if (!customer.email) {
       blockers.push(CUSTOMER_EMAIL_INVOICE_BLOCKER);
     }
-    if (estimate.total <= 0 && servicesSnapshot.length === 0) {
+    if (payload.total <= 0 && servicesSnapshot.length === 0) {
       blockers.push(BILLABLE_INVOICE_BLOCKER);
     }
     if (
@@ -911,6 +926,32 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     }
 
     return actual.toFixed(precision) === expected.toFixed(precision);
+  }
+
+  private resolvePaymentStatusFromBalance(
+    total: number,
+    amountPaid: number,
+    currentStatus?: PaidStatus,
+  ) {
+    if (
+      currentStatus === PaidStatus.PART_PAID &&
+      amountPaid <= 0 &&
+      total > 0
+    ) {
+      return PaidStatus.PART_PAID;
+    }
+
+    const amountRemaining = resolveEstimatePaymentState({
+      amount_paid: amountPaid,
+      total,
+    }).amount_remaining;
+    if (amountRemaining === 0 && total > 0) {
+      return PaidStatus.PAID;
+    }
+    if (amountPaid > 0) {
+      return PaidStatus.PART_PAID;
+    }
+    return PaidStatus.UNPAID;
   }
 
   private isSnapshotFinanciallySynced(
@@ -1168,6 +1209,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       total: resolvedTotals.total,
       payment_status: raw.payment_status_snapshot,
     });
+    const paymentStatus = this.resolvePaymentStatusFromBalance(
+      resolvedTotals.total,
+      paymentState.amount_paid,
+      raw.payment_status_snapshot,
+    );
 
     return {
       id: String(raw._id),
@@ -1193,7 +1239,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
       total: resolvedTotals.total,
       amount_paid_snapshot: paymentState.amount_paid,
       amount_remaining_snapshot: paymentState.amount_remaining,
-      payment_status_snapshot: raw.payment_status_snapshot,
+      payment_status_snapshot: paymentStatus,
       payment_type_snapshot: raw.payment_type_snapshot,
       time_zone_snapshot:
         typeof raw.time_zone_snapshot === 'string'
@@ -1549,9 +1595,11 @@ export class EstimateInvoiceService implements OnModuleDestroy {
 
   private async getPdfBrowser() {
     if (!this.pdfBrowserPromise) {
+      const executablePath = this.resolvePdfBrowserExecutablePath();
       const browserPromise = puppeteer
         .launch({
           headless: true,
+          ...(executablePath ? { executablePath } : {}),
           args: ['--no-sandbox', '--disable-setuid-sandbox'],
         })
         .then((browser) => {
@@ -1574,6 +1622,21 @@ export class EstimateInvoiceService implements OnModuleDestroy {
     }
 
     return this.pdfBrowserPromise;
+  }
+
+  private resolvePdfBrowserExecutablePath() {
+    const configuredPath =
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
+      process.env.CHROME_BIN ||
+      process.env.GOOGLE_CHROME_BIN;
+
+    if (configuredPath && existsSync(configuredPath)) {
+      return configuredPath;
+    }
+
+    return PDF_BROWSER_EXECUTABLE_CANDIDATES.find((candidate) =>
+      existsSync(candidate),
+    );
   }
 
   private async resetPdfBrowser() {

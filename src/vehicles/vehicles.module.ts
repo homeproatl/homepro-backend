@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module';
 import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { Estimate, EstimateSchema } from '../estimates/schemas/estimate.schema';
 import { Vehicle, VehicleSchema } from './schemas/vehicle.schema';
+import { VehicleLookupService } from './vehicle-lookup.service';
 import { VehiclesController } from './vehicles.controller';
 import { VehiclesService } from './vehicles.service';
 
@@ -22,7 +23,7 @@ import { VehiclesService } from './vehicles.service';
     ]),
   ],
   controllers: [VehiclesController],
-  providers: [VehiclesService],
+  providers: [VehicleLookupService, VehiclesService],
   exports: [VehiclesService],
 })
 export class VehiclesModule {}

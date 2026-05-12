@@ -194,7 +194,7 @@ export class EstimateDataService {
   }
 
   private normalizeEstimateTitle(value: string) {
-    return value.trim().toUpperCase();
+    return value.trim();
   }
 
   private normalizeSourceMetadata(
@@ -341,14 +341,15 @@ export class EstimateDataService {
       currentEstimate,
     );
     const serviceTotals = calculateEstimateTotals(services);
-    const totals = resolveEstimateTotals({
-      labor_total: serviceTotals.labor_total,
-      parts_total: serviceTotals.parts_total,
-      subtotal: input.subtotal,
-      tax_rate: input.tax_rate,
-      tax_amount: input.tax_amount,
-      total: input.total,
-    });
+    const totals = resolveEstimateTotals(
+      {
+        labor_total: serviceTotals.labor_total,
+        parts_total: serviceTotals.parts_total,
+        subtotal: serviceTotals.subtotal,
+        tax_rate: input.tax_rate,
+      },
+      { applyDefaultTaxWhenMissing: true },
+    );
 
     return {
       customer,

@@ -98,7 +98,7 @@ describe('EstimatesService', () => {
       },
     });
 
-    await service.create({
+    const result = await service.create({
       title: 'Brake Estimate',
       customer_id: 'customer-1',
       vehicle_id: 'vehicle-1',
@@ -117,6 +117,88 @@ describe('EstimatesService', () => {
         estimate_status: EstimateStatus.SCHEDULED,
       }),
     );
+    expect(result.invoice_ready).toBe(true);
+    expect(result.send_ready).toBe(true);
+  });
+
+  it('persists requested created date when creating estimates', async () => {
+    const created = {
+      _id: 'estimate-1',
+      payment_status: PaidStatus.UNPAID,
+      estimate_status: EstimateStatus.SCHEDULED,
+      due_date: null,
+      labor_total: 0,
+      parts_total: 0,
+      total: 0,
+      created_at: new Date('2026-05-12T16:08:00.000Z'),
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: jest.fn().mockImplementation(() => ({
+        _id: created._id,
+        customer_id: 'customer-1',
+        vehicle_id: 'vehicle-1',
+        payment_status: created.payment_status,
+        estimate_status: created.estimate_status,
+        due_date: created.due_date,
+        labor_total: created.labor_total,
+        parts_total: created.parts_total,
+        total: created.total,
+        created_at: created.created_at,
+      })),
+    };
+    const createEstimate = jest.fn().mockResolvedValue(created);
+
+    const service = createService({
+      estimateDataService: {
+        createEstimate,
+      },
+    });
+
+    await service.create({
+      title: 'Brake Estimate',
+      customer_id: 'customer-1',
+      vehicle_id: 'vehicle-1',
+      created_at: '2026-05-11T13:30:00.000Z',
+      services: [
+        {
+          name: 'Brake Service',
+          labor_lines: [],
+          part_lines: [],
+        },
+      ],
+    } as never);
+
+    expect(created.created_at.toISOString()).toBe(
+      '2026-05-11T13:30:00.000Z',
+    );
+    expect(created.save).toHaveBeenCalled();
+  });
+
+  it('rejects invalid created date changes before creating estimates', async () => {
+    const createEstimate = jest.fn();
+
+    const service = createService({
+      estimateDataService: {
+        createEstimate,
+      },
+    });
+
+    await expect(
+      service.create({
+        title: 'Brake Estimate',
+        customer_id: 'customer-1',
+        vehicle_id: 'vehicle-1',
+        created_at: 'not-a-date',
+        services: [
+          {
+            name: 'Brake Service',
+            labor_lines: [],
+            part_lines: [],
+          },
+        ],
+      } as never),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(createEstimate).not.toHaveBeenCalled();
   });
 
   it('filters estimates list by customer and vehicle ids when provided', async () => {
@@ -180,7 +262,7 @@ describe('EstimatesService', () => {
       id: 'estimate-1',
       customer_id: '507f1f77bcf86cd799439011',
       vehicle_id: '507f1f77bcf86cd799439012',
-      total: 150,
+      total: 163.31,
       invoice_ready: true,
       send_ready: true,
     });
@@ -268,6 +350,9 @@ describe('EstimatesService', () => {
     });
 
     const [pipeline] = estimateModel.aggregate.mock.calls[0] as [Array<Record<string, unknown>>];
+    const defaultSortStage = pipeline.find(
+      (stage) => '$sort' in stage && (stage.$sort as { created_at?: number }).created_at === -1,
+    );
     const matchingInvoiceLookup = pipeline.find(
       (stage) =>
         '$lookup' in stage &&
@@ -305,6 +390,7 @@ describe('EstimatesService', () => {
     )?.$match?.$expr?.$and?.[1]?.$regexMatch?.regex;
 
     expect(matchingInvoiceLookup).toBeDefined();
+    expect(defaultSortStage).toEqual({ $sort: { created_at: -1 } });
     expect(String(matchingInvoiceRegex)).toBe('/RBNTPT-R2/i');
     expect(searchMatchStage?.$match.$or).toEqual(
       expect.arrayContaining([
@@ -514,12 +600,118 @@ describe('EstimatesService', () => {
       },
     });
 
-    await service.update('507f1f77bcf86cd799439011', {
+    const result = await service.update('507f1f77bcf86cd799439011', {
       estimate_status: EstimateStatus.IN_PROGRESS,
     });
 
     expect(estimate.estimate_status).toBe(EstimateStatus.IN_PROGRESS);
     expect(applyEstimateUpdate).toHaveBeenCalled();
+    expect(result.invoice_ready).toBe(true);
+    expect(result.send_ready).toBe(true);
+  });
+
+  it('persists created date changes through the grouped update flow', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      title: 'Oil Service',
+      customer_id: '507f1f77bcf86cd799439012',
+      vehicle_id: '507f1f77bcf86cd799439013',
+      assigned_user_id: null,
+      complaint_or_request: null,
+      notes: null,
+      payment_type: 'POS_CARD',
+      due_date: null,
+      estimate_status: EstimateStatus.SCHEDULED,
+      payment_status: PaidStatus.UNPAID,
+      amount_paid: 0,
+      services: [],
+      labor_total: 0,
+      parts_total: 0,
+      subtotal: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: 0,
+      created_at: new Date('2026-05-12T16:08:00.000Z'),
+      updated_at: new Date('2026-05-12T16:30:00.000Z'),
+      toObject: jest.fn().mockImplementation(() => ({
+        _id: estimate._id,
+        estimate_number: 'EST-100',
+        title: estimate.title,
+        customer_id: estimate.customer_id,
+        vehicle_id: estimate.vehicle_id,
+        assigned_user_id: estimate.assigned_user_id,
+        complaint_or_request: estimate.complaint_or_request,
+        notes: estimate.notes,
+        payment_type: estimate.payment_type,
+        due_date: estimate.due_date,
+        estimate_status: estimate.estimate_status,
+        payment_status: estimate.payment_status,
+        amount_paid: estimate.amount_paid,
+        services: estimate.services,
+        labor_total: estimate.labor_total,
+        parts_total: estimate.parts_total,
+        subtotal: estimate.subtotal,
+        tax_rate: estimate.tax_rate,
+        tax_amount: estimate.tax_amount,
+        total: estimate.total,
+        created_at: estimate.created_at,
+        updated_at: estimate.updated_at,
+      })),
+      save,
+    };
+    const applyEstimateUpdate = jest.fn().mockResolvedValue(estimate);
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+      estimateDataService: {
+        applyEstimateUpdate,
+      },
+    });
+
+    await service.update('507f1f77bcf86cd799439011', {
+      created_at: '2026-05-11T13:30:00.000Z',
+    });
+
+    expect(estimate.created_at.toISOString()).toBe(
+      '2026-05-11T13:30:00.000Z',
+    );
+    expect(save).toHaveBeenCalled();
+  });
+
+  it('rejects invalid created date changes before applying grouped updates', async () => {
+    const applyEstimateUpdate = jest.fn().mockResolvedValue(undefined);
+    const save = jest.fn().mockResolvedValue(undefined);
+    const estimate = {
+      _id: '507f1f77bcf86cd799439011',
+      estimate_status: EstimateStatus.SCHEDULED,
+      services: [],
+      save,
+    };
+
+    const service = createService({
+      estimateModel: {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(estimate),
+        }),
+      },
+      estimateDataService: {
+        applyEstimateUpdate,
+      },
+    });
+
+    await expect(
+      service.update('507f1f77bcf86cd799439011', {
+        created_at: 'not-a-date',
+      } as never),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(applyEstimateUpdate).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('rejects invalid estimate status transitions through the grouped update flow', async () => {
@@ -814,7 +1006,7 @@ describe('EstimatesService', () => {
     expect(estimate.payment_events).toHaveLength(2);
     expect(estimate.payment_events[1].amount_delta).toBe(300);
     expect(estimate.payment_events[1].amount_paid_total).toBe(400);
-    expect(estimate.payment_events[1].amount_remaining_total).toBe(100);
+    expect(estimate.payment_events[1].amount_remaining_total).toBe(144.38);
   });
 
   it('preserves legacy PART_PAID status when amount_paid is missing during estimate updates', async () => {
@@ -928,9 +1120,51 @@ describe('EstimatesService', () => {
     });
 
     expect(result).toMatchObject({
+      payment_status: PaidStatus.PAID,
       amount_paid: 500.83,
       amount_remaining: 0,
+      total: 500.83,
+    });
+  });
+
+  it('downgrades stale PAID records to PART_PAID when tax-inclusive total leaves a balance', () => {
+    const service = createService();
+
+    const result = (
+      service as unknown as {
+        withDerivedEstimate: (estimate: Record<string, unknown>) => Record<string, unknown>;
+      }
+    ).withDerivedEstimate({
+      _id: '507f1f77bcf86cd799439011',
+      estimate_number: 'EST-104',
+      title: 'Legacy Paid Without Tax',
+      customer_id: '507f1f77bcf86cd799439012',
+      vehicle_id: '507f1f77bcf86cd799439013',
+      assigned_user_id: null,
+      complaint_or_request: null,
+      notes: null,
+      payment_type: 'POS_CARD',
+      due_date: null,
+      estimate_status: EstimateStatus.SCHEDULED,
+      payment_status: PaidStatus.PAID,
+      amount_paid: 460,
+      payment_events: [],
+      services: [],
+      labor_total: 260,
+      parts_total: 200,
+      subtotal: 460,
+      tax_rate: 8.875,
+      tax_amount: 40.83,
       total: 460,
+      created_at: new Date('2026-04-03T08:00:00.000Z'),
+      updated_at: new Date('2026-04-03T08:30:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      payment_status: PaidStatus.PART_PAID,
+      amount_paid: 460,
+      amount_remaining: 40.83,
+      total: 500.83,
     });
   });
 });

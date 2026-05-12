@@ -13,14 +13,19 @@ import {
 import { AuthGuard } from '../auth/guards/auth.guard';
 import type { AuthenticatedRequest } from '../auth/guards/auth.guard';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { LookupVehicleQueryDto } from './dto/lookup-vehicle-query.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
+import { VehicleLookupService } from './vehicle-lookup.service';
 import { VehiclesService } from './vehicles.service';
 
 @Controller('vehicles')
 @UseGuards(AuthGuard)
 export class VehiclesController {
-  constructor(private readonly vehiclesService: VehiclesService) {}
+  constructor(
+    private readonly vehiclesService: VehiclesService,
+    private readonly vehicleLookupService: VehicleLookupService,
+  ) {}
 
   @Post()
   create(@Body() payload: CreateVehicleDto) {
@@ -33,6 +38,11 @@ export class VehiclesController {
       return this.vehiclesService.findPage(query);
     }
     return this.vehiclesService.findAll(query);
+  }
+
+  @Get('lookup')
+  lookup(@Query() query: LookupVehicleQueryDto) {
+    return this.vehicleLookupService.lookupByVin(query.vin);
   }
 
   @Get(':id')
