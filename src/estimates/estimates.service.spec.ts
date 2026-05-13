@@ -332,6 +332,103 @@ describe('EstimatesService', () => {
     ]);
   });
 
+  it('filters non-paginated estimates by the active jobs dashboard link', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        _id: 'estimate-active',
+        estimate_number: 'EST-ACTIVE',
+        title: 'Active Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        estimate_status: EstimateStatus.IN_PROGRESS,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-completed',
+        estimate_number: 'EST-COMPLETE',
+        title: 'Completed Estimate',
+        customer_id: '507f1f77bcf86cd799439013',
+        vehicle_id: '507f1f77bcf86cd799439014',
+        estimate_status: EstimateStatus.COMPLETED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await expect(service.findAll({ status: 'active' })).resolves.toMatchObject([
+      {
+        id: 'estimate-active',
+      },
+    ]);
+  });
+
+  it('filters non-paginated overdue links to estimates with remaining balance', async () => {
+    const pastDue = new Date(Date.now() - 60_000).toISOString();
+    const estimateModel = createListEstimateModel([
+      {
+        _id: 'estimate-overdue-balance',
+        estimate_number: 'EST-BALANCE',
+        title: 'Overdue Balance Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        estimate_status: EstimateStatus.COMPLETED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: pastDue,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-overdue-empty',
+        estimate_number: 'EST-EMPTY',
+        title: 'Empty Overdue Estimate',
+        customer_id: '507f1f77bcf86cd799439013',
+        vehicle_id: '507f1f77bcf86cd799439014',
+        estimate_status: EstimateStatus.COMPLETED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: pastDue,
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await expect(service.findAll({ overdue: true })).resolves.toMatchObject([
+      {
+        id: 'estimate-overdue-balance',
+      },
+    ]);
+  });
+
   it('adds invoice-number matching to the paginated estimates search pipeline', async () => {
     const estimateModel = createListEstimateModel([
       {
@@ -400,6 +497,74 @@ describe('EstimatesService', () => {
     );
   });
 
+  it('filters paginated overdue dashboard links to billing-overdue estimates', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      overdue: true,
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<Record<string, unknown>>,
+    ];
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        {
+          $match: {
+            is_overdue_billing: true,
+          },
+        },
+      ]),
+    );
+  });
+
+  it('filters paginated estimates by the active jobs dashboard link', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      status: 'active',
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<Record<string, unknown>>,
+    ];
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        {
+          $match: {
+            estimate_status: {
+              $in: [
+                EstimateStatus.SCHEDULED,
+                EstimateStatus.CHECKED_IN,
+                EstimateStatus.IN_PROGRESS,
+              ],
+            },
+          },
+        },
+      ]),
+    );
+  });
+
   it('returns backend-derived admin invoice workflow labels on estimate rows', async () => {
     const estimateModel = createListEstimateModel([
       {
@@ -452,6 +617,8 @@ describe('EstimatesService', () => {
   });
 
   it('builds dashboard summary metrics on the backend', async () => {
+    const todayStart = '2026-03-20T04:00:00.000Z';
+    const todayEnd = '2026-03-21T04:00:00.000Z';
     const estimateModel = createListEstimateModel([
       {
         _id: 'estimate-ready',
@@ -462,6 +629,8 @@ describe('EstimatesService', () => {
         payment_status: PaidStatus.UNPAID,
         payment_type: 'POS_CARD',
         estimate_status: EstimateStatus.SCHEDULED,
+        scheduled_start: new Date('2026-03-20T13:00:00.000Z'),
+        scheduled_end: new Date('2026-03-20T14:00:00.000Z'),
         due_date: null,
         labor_total: 100,
         parts_total: 0,
@@ -483,6 +652,81 @@ describe('EstimatesService', () => {
         labor_total: 0,
         parts_total: 50,
         total: 50,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-in-progress',
+        estimate_number: 'EST-PROGRESS',
+        title: 'In Progress Estimate',
+        customer_id: '507f1f77bcf86cd799439015',
+        vehicle_id: '507f1f77bcf86cd799439016',
+        payment_status: PaidStatus.PAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.IN_PROGRESS,
+        scheduled_start: new Date('2026-03-20T15:00:00.000Z'),
+        scheduled_end: new Date('2026-03-20T16:00:00.000Z'),
+        due_date: null,
+        labor_total: 200,
+        parts_total: 0,
+        total: 200,
+        amount_paid: 217.75,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-cancelled',
+        estimate_number: 'EST-CANCELLED',
+        title: 'Cancelled Estimate',
+        customer_id: '507f1f77bcf86cd799439017',
+        vehicle_id: '507f1f77bcf86cd799439018',
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.CANCELLED,
+        scheduled_start: new Date('2026-03-20T16:00:00.000Z'),
+        scheduled_end: new Date('2026-03-20T17:00:00.000Z'),
+        due_date: null,
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-ended-at-start',
+        estimate_number: 'EST-END-START',
+        title: 'Ended At Start Estimate',
+        customer_id: '507f1f77bcf86cd799439019',
+        vehicle_id: '507f1f77bcf86cd799439020',
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.SCHEDULED,
+        scheduled_start: new Date('2026-03-20T03:00:00.000Z'),
+        scheduled_end: new Date(todayStart),
+        due_date: null,
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-empty-unpaid',
+        estimate_number: 'EST-EMPTY',
+        title: 'Empty Unpaid Estimate',
+        customer_id: '507f1f77bcf86cd799439021',
+        vehicle_id: '507f1f77bcf86cd799439022',
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        estimate_status: EstimateStatus.COMPLETED,
+        due_date: new Date(Date.now() - 120_000).toISOString(),
+        labor_total: 0,
+        parts_total: 0,
+        total: 0,
         services_count: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -518,12 +762,44 @@ describe('EstimatesService', () => {
       estimateInvoiceService: { getEstimateBillingSummariesForList },
     });
 
-    await expect(service.getDashboardSummary()).resolves.toMatchObject({
-      active_estimates: 1,
-      completed_jobs: 1,
+    const result = await service.getDashboardSummary({
+      dateFrom: todayStart,
+      dateTo: todayEnd,
+    });
+
+    expect(result).toMatchObject({
+      active_estimates: 3,
+      completed_jobs: 2,
+      scheduled_today: 2,
+      ready_to_invoice: 1,
       overdue_billing: 1,
       unpaid_billing: 2,
+      workflow_status_counts: {
+        scheduled: 2,
+        checked_in: 0,
+        in_progress: 1,
+        completed: 2,
+      },
+      today_work_estimates: [
+        expect.objectContaining({ id: 'estimate-ready' }),
+        expect.objectContaining({ id: 'estimate-in-progress' }),
+      ],
+      needs_attention_estimates: [
+        expect.objectContaining({ id: 'estimate-overdue' }),
+        expect.objectContaining({ id: 'estimate-ready' }),
+      ],
     });
+    expect(result.today_work_estimates).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ id: 'estimate-cancelled' }),
+        expect.objectContaining({ id: 'estimate-ended-at-start' }),
+      ]),
+    );
+    expect(result.needs_attention_estimates).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ id: 'estimate-empty-unpaid' }),
+      ]),
+    );
   });
 
   it('prevents deleting estimates that already have grouped service activity', async () => {

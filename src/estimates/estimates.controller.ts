@@ -22,6 +22,7 @@ import { UpdateEstimateStatusDto } from './dto/update-estimate-status.dto';
 import { UpdateEstimatePaymentStatusDto } from './dto/update-estimate-payment-status.dto';
 import { CalendarEstimatesQueryDto } from './dto/calendar-estimates-query.dto';
 import { ListEstimatesQueryDto } from './dto/list-estimates-query.dto';
+import { DashboardSummaryQueryDto } from './dto/dashboard-summary-query.dto';
 
 @Controller('estimates')
 @UseGuards(AuthGuard)
@@ -43,8 +44,11 @@ export class EstimatesController {
   }
 
   @Get('dashboard-summary')
-  getDashboardSummary() {
-    return this.estimatesService.getDashboardSummary();
+  getDashboardSummary(@Query() query: DashboardSummaryQueryDto) {
+    return this.estimatesService.getDashboardSummary({
+      dateFrom: query.date_from,
+      dateTo: query.date_to,
+    });
   }
 
   @Get('calendar')

@@ -31,6 +31,12 @@ import { UpdateEstimateStatusDto } from './dto/update-estimate-status.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { Estimate, EstimateDocument } from './schemas/estimate.schema';
 
+const ACTIVE_ESTIMATE_STATUSES = [
+  EstimateStatus.SCHEDULED,
+  EstimateStatus.CHECKED_IN,
+  EstimateStatus.IN_PROGRESS,
+] as const;
+
 type AdminInvoiceWorkflowState =
   | 'blocked'
   | 'ready_to_send'
@@ -70,9 +76,13 @@ type DashboardSummaryEstimate = {
   payment_status?: PaidStatus;
   total?: number;
   amount_paid?: number;
+  amount_remaining?: number;
   due_date?: string | Date | null;
+  scheduled_start?: string | Date | null;
+  scheduled_end?: string | Date | null;
   is_overdue: boolean;
   admin_invoice_workflow_state: AdminInvoiceWorkflowState;
+  created_at?: string | Date | null;
 };
 
 type EstimateListRecord = {
@@ -237,23 +247,40 @@ export class EstimatesService {
     };
   }
 
-  async getDashboardSummary() {
+  async getDashboardSummary(
+    options: { dateFrom?: string; dateTo?: string } = {},
+  ) {
     const estimates = (await this.findAll()) as DashboardSummaryEstimate[];
     const overviewEstimates = this.getDashboardOverviewEstimates(estimates);
+    const todayRange = this.getDashboardDateRange(options);
     let activeJobs = 0;
     let completedJobs = 0;
     let overdueBilling = 0;
     let unpaidBilling = 0;
+    let scheduledToday = 0;
+    let readyToInvoice = 0;
+    const workflowStatusCounts = {
+      scheduled: 0,
+      checked_in: 0,
+      in_progress: 0,
+      completed: 0,
+    };
 
     for (const estimate of estimates) {
-      if (
-        estimate.estimate_status &&
-        [
-          EstimateStatus.SCHEDULED,
-          EstimateStatus.CHECKED_IN,
-          EstimateStatus.IN_PROGRESS,
-        ].includes(estimate.estimate_status)
-      ) {
+      if (estimate.estimate_status === EstimateStatus.SCHEDULED) {
+        workflowStatusCounts.scheduled += 1;
+      }
+      if (estimate.estimate_status === EstimateStatus.CHECKED_IN) {
+        workflowStatusCounts.checked_in += 1;
+      }
+      if (estimate.estimate_status === EstimateStatus.IN_PROGRESS) {
+        workflowStatusCounts.in_progress += 1;
+      }
+      if (estimate.estimate_status === EstimateStatus.COMPLETED) {
+        workflowStatusCounts.completed += 1;
+      }
+
+      if (this.isActiveDashboardJob(estimate)) {
         activeJobs += 1;
       }
 
@@ -261,34 +288,45 @@ export class EstimatesService {
         completedJobs += 1;
       }
 
+      if (estimate.admin_invoice_workflow_state === 'ready_to_send') {
+        readyToInvoice += 1;
+      }
+
+      if (
+        todayRange &&
+        this.isDashboardWorkVisible(estimate) &&
+        this.isScheduledInsideDashboardRange(estimate, todayRange)
+      ) {
+        scheduledToday += 1;
+      }
+
       if (!this.isBillingVisible(estimate)) {
         continue;
       }
 
-      if (estimate.is_overdue) {
+      if (this.isDashboardOverdueBilling(estimate)) {
         overdueBilling += 1;
       }
 
-      const paymentStatus = estimate.payment_status ?? PaidStatus.UNPAID;
-      const total = typeof estimate.total === 'number' ? estimate.total : 0;
-      const amountPaid =
-        typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0;
-      const amountRemaining = Math.max(total - amountPaid, 0);
-
-      if (
-        paymentStatus === PaidStatus.UNPAID ||
-        (paymentStatus === PaidStatus.PART_PAID && amountRemaining > 0)
-      ) {
+      if (this.hasDashboardPaymentBalance(estimate)) {
         unpaidBilling += 1;
       }
     }
 
     return {
       overview_estimates: overviewEstimates,
+      today_work_estimates: todayRange
+        ? this.getDashboardTodayWorkEstimates(estimates, todayRange)
+        : [],
+      needs_attention_estimates:
+        this.getDashboardNeedsAttentionEstimates(estimates, todayRange),
       active_estimates: activeJobs,
       completed_jobs: completedJobs,
+      scheduled_today: scheduledToday,
+      ready_to_invoice: readyToInvoice,
       overdue_billing: overdueBilling,
       unpaid_billing: unpaidBilling,
+      workflow_status_counts: workflowStatusCounts,
     };
   }
 
@@ -1677,7 +1715,7 @@ export class EstimatesService {
     const nowMs = Date.now();
     const sorted = estimatesWithBillingSummaries
       .filter((estimate) => {
-        if (filters.status && estimate.estimate_status !== filters.status) {
+        if (!this.matchesEstimateListStatusFilter(estimate, filters.status)) {
           return false;
         }
 
@@ -1703,10 +1741,7 @@ export class EstimatesService {
           return false;
         }
 
-        if (
-          filters.overdue !== undefined &&
-          estimate.is_overdue !== filters.overdue
-        ) {
+        if (!this.matchesOverdueBillingFilter(estimate, filters.overdue)) {
           return false;
         }
 
@@ -1774,6 +1809,7 @@ export class EstimatesService {
           estimate_status: 1,
           payment_status: 1,
           payment_type: 1,
+          amount_paid: 1,
           due_date: 1,
           labor_total: 1,
           parts_total: 1,
@@ -1964,6 +2000,28 @@ export class EstimatesService {
               ],
             },
           },
+          amount_remaining: {
+            $max: [
+              {
+                $subtract: [
+                  { $ifNull: ['$total', 0] },
+                  {
+                    $ifNull: [
+                      '$amount_paid',
+                      {
+                        $cond: [
+                          { $eq: ['$payment_status', PaidStatus.PAID] },
+                          { $ifNull: ['$total', 0] },
+                          0,
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              0,
+            ],
+          },
           is_overdue: {
             $and: [
               { $ne: ['$due_date', null] },
@@ -1975,6 +2033,13 @@ export class EstimatesService {
       },
       {
         $addFields: {
+          is_overdue_billing: {
+            $and: [
+              { $ne: ['$due_date', null] },
+              { $lt: ['$due_date', now] },
+              { $gt: ['$amount_remaining', 0] },
+            ],
+          },
           invoice_ready: {
             $and: ['$has_customer_email', '$has_billable_lines'],
           },
@@ -2053,7 +2118,13 @@ export class EstimatesService {
       },
     ];
 
-    if (filters.status) {
+    if (filters.status === 'active') {
+      pipeline.push({
+        $match: {
+          estimate_status: { $in: ACTIVE_ESTIMATE_STATUSES },
+        },
+      });
+    } else if (filters.status) {
       pipeline.push({
         $match: {
           estimate_status: filters.status,
@@ -2089,7 +2160,7 @@ export class EstimatesService {
     if (filters.overdue !== undefined) {
       pipeline.push({
         $match: {
-          is_overdue: filters.overdue,
+          is_overdue_billing: filters.overdue,
         },
       });
     }
@@ -2377,7 +2448,7 @@ export class EstimatesService {
     ) {
       return {
         admin_invoice_workflow_state: 'needs_resend',
-        admin_invoice_workflow_title: 'Needs Resend',
+        admin_invoice_workflow_title: 'Needs Update',
         admin_invoice_workflow_detail:
           billingSummary.latest_invoice_number
             ? `Last invoice: ${billingSummary.latest_invoice_number}`
@@ -2392,7 +2463,7 @@ export class EstimatesService {
     ) {
       return {
         admin_invoice_workflow_state: 'sent',
-        admin_invoice_workflow_title: 'Invoice Accepted',
+        admin_invoice_workflow_title: 'Sent',
         admin_invoice_workflow_detail:
           billingSummary.latest_invoice_number
             ? `Last invoice: ${billingSummary.latest_invoice_number}`
@@ -2406,7 +2477,7 @@ export class EstimatesService {
     ) {
       return {
         admin_invoice_workflow_state: 'blocked',
-        admin_invoice_workflow_title: 'Blocked',
+        admin_invoice_workflow_title: 'Not Ready',
         admin_invoice_workflow_detail:
           billingSummary.latest_invoice_number
             ? `Last invoice: ${billingSummary.latest_invoice_number}`
@@ -2430,7 +2501,7 @@ export class EstimatesService {
 
     return {
       admin_invoice_workflow_state: 'blocked',
-      admin_invoice_workflow_title: 'Blocked',
+      admin_invoice_workflow_title: 'Not Ready',
       admin_invoice_workflow_detail: 'Add billing details before sending',
     };
   }
@@ -2462,12 +2533,245 @@ export class EstimatesService {
     return overviewEstimates;
   }
 
+  private matchesEstimateListStatusFilter(
+    estimate: EstimateListItem,
+    status?: ListEstimatesQueryDto['status'],
+  ) {
+    if (!status) {
+      return true;
+    }
+
+    if (status === 'active') {
+      return ACTIVE_ESTIMATE_STATUSES.includes(
+        estimate.estimate_status as (typeof ACTIVE_ESTIMATE_STATUSES)[number],
+      );
+    }
+
+    return estimate.estimate_status === status;
+  }
+
+  private matchesOverdueBillingFilter(
+    estimate: Pick<
+      DashboardSummaryEstimate,
+      'is_overdue' | 'payment_status' | 'total' | 'amount_paid' | 'amount_remaining'
+    >,
+    overdue?: boolean,
+  ) {
+    if (overdue === undefined) {
+      return true;
+    }
+
+    return this.isDashboardOverdueBilling(estimate) === overdue;
+  }
+
+  private getDashboardTodayWorkEstimates(
+    estimates: DashboardSummaryEstimate[],
+    range: { startMs: number; endMs: number },
+  ) {
+    return estimates
+      .filter(
+        (estimate) =>
+          this.isDashboardWorkVisible(estimate) &&
+          (estimate.estimate_status === EstimateStatus.CHECKED_IN ||
+            estimate.estimate_status === EstimateStatus.IN_PROGRESS ||
+            this.isScheduledInsideDashboardRange(estimate, range)),
+      )
+      .sort((left, right) => {
+        const leftStart = this.toDashboardTimeMs(left.scheduled_start);
+        const rightStart = this.toDashboardTimeMs(right.scheduled_start);
+        const leftScheduleSort = leftStart ?? Number.MAX_SAFE_INTEGER;
+        const rightScheduleSort = rightStart ?? Number.MAX_SAFE_INTEGER;
+
+        if (leftScheduleSort !== rightScheduleSort) {
+          return leftScheduleSort - rightScheduleSort;
+        }
+
+        return (
+          this.getDashboardStatusSortPriority(left) -
+            this.getDashboardStatusSortPriority(right) ||
+          this.compareDashboardCreatedAtDesc(left, right)
+        );
+      })
+      .slice(0, 5);
+  }
+
+  private getDashboardNeedsAttentionEstimates(
+    estimates: DashboardSummaryEstimate[],
+    range: { startMs: number; endMs: number } | null,
+  ) {
+    return estimates
+      .filter((estimate) => this.isDashboardAttentionEstimate(estimate, range))
+      .sort((left, right) => {
+        return (
+          this.getDashboardAttentionSortPriority(left, range) -
+            this.getDashboardAttentionSortPriority(right, range) ||
+          (this.toDashboardTimeMs(left.due_date) ?? Number.MAX_SAFE_INTEGER) -
+            (this.toDashboardTimeMs(right.due_date) ?? Number.MAX_SAFE_INTEGER) ||
+          this.compareDashboardCreatedAtDesc(left, right)
+        );
+      })
+      .slice(0, 5);
+  }
+
   private isDashboardPriorityEstimate(estimate: DashboardSummaryEstimate) {
     return (
-      estimate.is_overdue ||
-      (estimate.payment_status ?? PaidStatus.UNPAID) !== PaidStatus.PAID ||
+      this.isDashboardOverdueBilling(estimate) ||
+      this.hasDashboardPaymentBalance(estimate) ||
       estimate.admin_invoice_workflow_state === 'ready_to_send' ||
       estimate.admin_invoice_workflow_state === 'needs_resend'
+    );
+  }
+
+  private isDashboardAttentionEstimate(
+    estimate: DashboardSummaryEstimate,
+    range: { startMs: number; endMs: number } | null,
+  ) {
+    return (
+      this.isDashboardOverdueBilling(estimate) ||
+      estimate.admin_invoice_workflow_state === 'ready_to_send' ||
+      estimate.admin_invoice_workflow_state === 'needs_resend' ||
+      this.hasDashboardPaymentBalance(estimate) ||
+      (range ? this.isDueInsideDashboardRange(estimate, range) : false)
+    );
+  }
+
+  private isDashboardOverdueBilling(
+    estimate: Pick<
+      DashboardSummaryEstimate,
+      'is_overdue' | 'payment_status' | 'total' | 'amount_paid' | 'amount_remaining'
+    >,
+  ) {
+    return estimate.is_overdue && this.hasDashboardPaymentBalance(estimate);
+  }
+
+  private isActiveDashboardJob(estimate: DashboardSummaryEstimate) {
+    return ACTIVE_ESTIMATE_STATUSES.includes(
+      estimate.estimate_status as (typeof ACTIVE_ESTIMATE_STATUSES)[number],
+    );
+  }
+
+  private isDashboardWorkVisible(estimate: DashboardSummaryEstimate) {
+    return (
+      estimate.estimate_status !== EstimateStatus.CANCELLED &&
+      estimate.estimate_status !== EstimateStatus.NO_SHOW
+    );
+  }
+
+  private hasDashboardPaymentBalance(
+    estimate: Pick<
+      DashboardSummaryEstimate,
+      'payment_status' | 'total' | 'amount_paid' | 'amount_remaining'
+    >,
+  ) {
+    const paymentStatus = estimate.payment_status ?? PaidStatus.UNPAID;
+    const total = typeof estimate.total === 'number' ? estimate.total : 0;
+    const amountPaid =
+      typeof estimate.amount_paid === 'number' ? estimate.amount_paid : 0;
+    const amountRemaining =
+      typeof estimate.amount_remaining === 'number'
+        ? estimate.amount_remaining
+        : Math.max(total - amountPaid, 0);
+
+    return (
+      (paymentStatus === PaidStatus.UNPAID && amountRemaining > 0) ||
+      (paymentStatus === PaidStatus.PART_PAID && amountRemaining > 0)
+    );
+  }
+
+  private getDashboardDateRange(options: {
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    if (!options.dateFrom || !options.dateTo) {
+      return null;
+    }
+
+    const startMs = new Date(options.dateFrom).getTime();
+    const endMs = new Date(options.dateTo).getTime();
+
+    if (
+      !Number.isFinite(startMs) ||
+      !Number.isFinite(endMs) ||
+      startMs >= endMs
+    ) {
+      return null;
+    }
+
+    return { startMs, endMs };
+  }
+
+  private isScheduledInsideDashboardRange(
+    estimate: DashboardSummaryEstimate,
+    range: { startMs: number; endMs: number },
+  ) {
+    const startMs = this.toDashboardTimeMs(estimate.scheduled_start);
+    if (startMs === null) {
+      return false;
+    }
+
+    const endMs = this.toDashboardTimeMs(estimate.scheduled_end) ?? startMs;
+    return startMs < range.endMs && endMs > range.startMs;
+  }
+
+  private isDueInsideDashboardRange(
+    estimate: DashboardSummaryEstimate,
+    range: { startMs: number; endMs: number },
+  ) {
+    const dueMs = this.toDashboardTimeMs(estimate.due_date);
+    return dueMs !== null && dueMs >= range.startMs && dueMs < range.endMs;
+  }
+
+  private toDashboardTimeMs(value?: string | Date | null) {
+    if (!value) {
+      return null;
+    }
+
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+
+  private getDashboardStatusSortPriority(estimate: DashboardSummaryEstimate) {
+    if (estimate.estimate_status === EstimateStatus.IN_PROGRESS) {
+      return 0;
+    }
+    if (estimate.estimate_status === EstimateStatus.CHECKED_IN) {
+      return 1;
+    }
+    if (estimate.estimate_status === EstimateStatus.SCHEDULED) {
+      return 2;
+    }
+    return 3;
+  }
+
+  private getDashboardAttentionSortPriority(
+    estimate: DashboardSummaryEstimate,
+    range: { startMs: number; endMs: number } | null,
+  ) {
+    if (this.isDashboardOverdueBilling(estimate)) {
+      return 0;
+    }
+    if (estimate.admin_invoice_workflow_state === 'needs_resend') {
+      return 1;
+    }
+    if (estimate.admin_invoice_workflow_state === 'ready_to_send') {
+      return 2;
+    }
+    if (this.hasDashboardPaymentBalance(estimate)) {
+      return 3;
+    }
+    if (range && this.isDueInsideDashboardRange(estimate, range)) {
+      return 4;
+    }
+    return 5;
+  }
+
+  private compareDashboardCreatedAtDesc(
+    left: DashboardSummaryEstimate,
+    right: DashboardSummaryEstimate,
+  ) {
+    return (
+      (this.toDashboardTimeMs(right.created_at) ?? 0) -
+      (this.toDashboardTimeMs(left.created_at) ?? 0)
     );
   }
 

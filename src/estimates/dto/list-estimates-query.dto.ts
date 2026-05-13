@@ -49,6 +49,10 @@ function transformNumber(value: unknown) {
 }
 
 export const ESTIMATE_LIST_SORT_MODES = ['nearest_upcoming', 'newest'] as const;
+export const ESTIMATE_LIST_STATUS_FILTERS = [
+  ...Object.values(EstimateStatus),
+  'active',
+] as const;
 
 export class ListEstimatesQueryDto {
   @IsOptional()
@@ -83,8 +87,8 @@ export class ListEstimatesQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsIn(Object.values(EstimateStatus))
-  status?: EstimateStatus;
+  @IsIn(ESTIMATE_LIST_STATUS_FILTERS)
+  status?: (typeof ESTIMATE_LIST_STATUS_FILTERS)[number];
 
   @IsOptional()
   @IsIn(ESTIMATE_LIST_SORT_MODES)

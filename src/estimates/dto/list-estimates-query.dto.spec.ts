@@ -58,6 +58,22 @@ describe('ListEstimatesQueryDto', () => {
     });
   });
 
+  it('accepts the active status shortcut used by dashboard links', async () => {
+    const transformed = (await pipe.transform(
+      {
+        status: 'active',
+      },
+      {
+        type: 'query',
+        metatype: ListEstimatesQueryDto,
+      },
+    )) as ListEstimatesQueryDto;
+
+    expect(transformed).toEqual({
+      status: 'active',
+    });
+  });
+
   it('rejects malformed ids', async () => {
     await expect(
       pipe.transform(
