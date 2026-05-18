@@ -1736,7 +1736,8 @@ export class EstimatesService {
 
         if (
           filters.ready_to_invoice !== undefined &&
-          estimate.invoice_ready !== filters.ready_to_invoice
+          (estimate.admin_invoice_workflow_state === 'ready_to_send') !==
+            filters.ready_to_invoice
         ) {
           return false;
         }
@@ -2143,17 +2144,31 @@ export class EstimatesService {
 
     if (filters.admin_invoice_workflow_state) {
       pipeline.push({
-        $match: {
-          admin_invoice_workflow_state: filters.admin_invoice_workflow_state,
-        },
+        $match: this.buildAdminInvoiceWorkflowMatch(
+          filters.admin_invoice_workflow_state,
+        ),
       });
     }
 
     if (filters.ready_to_invoice !== undefined) {
       pipeline.push({
-        $match: {
-          invoice_ready: filters.ready_to_invoice,
-        },
+        $match: filters.ready_to_invoice
+          ? this.buildAdminInvoiceWorkflowMatch('ready_to_send')
+          : {
+              $or: [
+                { send_ready: { $ne: true } },
+                { invoice_needs_refresh: true },
+                {
+                  invoice_status: {
+                    $in: [
+                      EstimateInvoiceSnapshotStatus.STALE,
+                      EstimateInvoiceSnapshotStatus.ACCEPTED,
+                      EstimateInvoiceSnapshotStatus.SENT,
+                    ],
+                  },
+                },
+              ],
+            },
       });
     }
 
@@ -2448,11 +2463,8 @@ export class EstimatesService {
     ) {
       return {
         admin_invoice_workflow_state: 'needs_resend',
-        admin_invoice_workflow_title: 'Needs Update',
-        admin_invoice_workflow_detail:
-          billingSummary.latest_invoice_number
-            ? `Last invoice: ${billingSummary.latest_invoice_number}`
-            : 'Estimate changed after the last invoice was prepared',
+        admin_invoice_workflow_title: 'Invoice Needs Update',
+        admin_invoice_workflow_detail: 'Estimate changed after the last invoice.',
       };
     }
 
@@ -2503,6 +2515,53 @@ export class EstimatesService {
       admin_invoice_workflow_state: 'blocked',
       admin_invoice_workflow_title: 'Not Ready',
       admin_invoice_workflow_detail: 'Add billing details before sending',
+    };
+  }
+
+  private buildAdminInvoiceWorkflowMatch(
+    state: AdminInvoiceWorkflowState,
+  ): Record<string, unknown> {
+    if (state === 'needs_resend') {
+      return {
+        $or: [
+          { invoice_status: EstimateInvoiceSnapshotStatus.STALE },
+          { invoice_needs_refresh: true },
+        ],
+      };
+    }
+
+    if (state === 'sent') {
+      return {
+        invoice_status: {
+          $in: [
+            EstimateInvoiceSnapshotStatus.ACCEPTED,
+            EstimateInvoiceSnapshotStatus.SENT,
+          ],
+        },
+      };
+    }
+
+    const notStaleOrSent = {
+      invoice_needs_refresh: { $ne: true },
+      invoice_status: {
+        $nin: [
+          EstimateInvoiceSnapshotStatus.STALE,
+          EstimateInvoiceSnapshotStatus.ACCEPTED,
+          EstimateInvoiceSnapshotStatus.SENT,
+        ],
+      },
+    };
+
+    if (state === 'ready_to_send') {
+      return {
+        ...notStaleOrSent,
+        send_ready: true,
+      };
+    }
+
+    return {
+      ...notStaleOrSent,
+      send_ready: { $ne: true },
     };
   }
 

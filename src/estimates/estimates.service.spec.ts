@@ -429,6 +429,80 @@ describe('EstimatesService', () => {
     ]);
   });
 
+  it('filters non-paginated ready-to-invoice links to ready-to-send estimates', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        _id: 'estimate-ready',
+        estimate_number: 'EST-READY',
+        title: 'Ready Estimate',
+        customer_id: '507f1f77bcf86cd799439011',
+        vehicle_id: '507f1f77bcf86cd799439012',
+        estimate_status: EstimateStatus.COMPLETED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        _id: 'estimate-needs-resend',
+        estimate_number: 'EST-STALE',
+        title: 'Needs Resend Estimate',
+        customer_id: '507f1f77bcf86cd799439013',
+        vehicle_id: '507f1f77bcf86cd799439014',
+        estimate_status: EstimateStatus.COMPLETED,
+        payment_status: PaidStatus.UNPAID,
+        payment_type: 'POS_CARD',
+        due_date: null,
+        labor_total: 100,
+        parts_total: 0,
+        total: 100,
+        services_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    const getEstimateBillingSummariesForList = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'estimate-ready',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.ISSUED,
+            latest_invoice_number: 'INV-READY',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: false,
+          },
+        ],
+        [
+          'estimate-needs-resend',
+          {
+            invoice_status: EstimateInvoiceSnapshotStatus.STALE,
+            latest_invoice_number: 'INV-STALE',
+            invoice_ready: true,
+            send_ready: true,
+            invoice_needs_refresh: true,
+          },
+        ],
+      ]),
+    );
+    const service = createService({
+      estimateModel,
+      estimateInvoiceService: { getEstimateBillingSummariesForList },
+    });
+
+    await expect(service.findAll({ ready_to_invoice: true })).resolves.toMatchObject([
+      {
+        id: 'estimate-ready',
+        admin_invoice_workflow_state: 'ready_to_send',
+      },
+    ]);
+  });
+
   it('adds invoice-number matching to the paginated estimates search pipeline', async () => {
     const estimateModel = createListEstimateModel([
       {
@@ -522,6 +596,118 @@ describe('EstimatesService', () => {
         {
           $match: {
             is_overdue_billing: true,
+          },
+        },
+      ]),
+    );
+  });
+
+  it('filters paginated ready-to-invoice dashboard links by ready-to-send workflow state', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      ready_to_invoice: true,
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<Record<string, unknown>>,
+    ];
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        {
+          $match: {
+            send_ready: true,
+            invoice_needs_refresh: { $ne: true },
+            invoice_status: {
+              $nin: [
+                EstimateInvoiceSnapshotStatus.STALE,
+                EstimateInvoiceSnapshotStatus.ACCEPTED,
+                EstimateInvoiceSnapshotStatus.SENT,
+              ],
+            },
+          },
+        },
+      ]),
+    );
+  });
+
+  it('filters paginated admin workflow links by ready-to-send workflow state', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      admin_invoice_workflow_state: 'ready_to_send',
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<Record<string, unknown>>,
+    ];
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        {
+          $match: {
+            send_ready: true,
+            invoice_needs_refresh: { $ne: true },
+            invoice_status: {
+              $nin: [
+                EstimateInvoiceSnapshotStatus.STALE,
+                EstimateInvoiceSnapshotStatus.ACCEPTED,
+                EstimateInvoiceSnapshotStatus.SENT,
+              ],
+            },
+          },
+        },
+      ]),
+    );
+  });
+
+  it('filters paginated admin workflow links by invoice-needs-update state', async () => {
+    const estimateModel = createListEstimateModel([
+      {
+        metadata: [{ total: 0 }],
+        items: [],
+      },
+    ]);
+    const service = createService({
+      estimateModel,
+    });
+
+    await service.findPage({
+      admin_invoice_workflow_state: 'needs_resend',
+      page: 1,
+      page_size: 25,
+    });
+
+    const [pipeline] = estimateModel.aggregate.mock.calls[0] as [
+      Array<Record<string, unknown>>,
+    ];
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        {
+          $match: {
+            $or: [
+              { invoice_status: EstimateInvoiceSnapshotStatus.STALE },
+              { invoice_needs_refresh: true },
+            ],
           },
         },
       ]),
