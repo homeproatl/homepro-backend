@@ -684,8 +684,8 @@ describe('EstimateInvoiceService', () => {
     );
     expect(html).not.toContain('invoice-logo-box');
     expect(html).not.toContain('background:#f8fafc;padding:7px 10px');
-    expect(html).toContain('301 Elmont Rd');
-    expect(html).toContain('Elmont, NY 11003');
+    expect(html).toContain('130-05 91st Ave');
+    expect(html).toContain('Richmond Hill, NY 11418');
     expect(html).toContain('(646) 807-6937');
     expect(html).toContain('gmb.auto@yahoo.com');
     expect(html).toContain('Invoice #INV-123456');

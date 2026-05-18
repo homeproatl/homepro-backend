@@ -362,8 +362,8 @@ export function renderInvoiceDocumentHtml(
   const lineItemsTable = renderInvoiceLineItemsTable(invoice.services);
   const noteSections = renderInvoiceNotes(invoice);
   const businessName = 'GMB Auto';
-  const businessAddressLine1 = '301 Elmont Rd';
-  const businessAddressLine2 = 'Elmont, NY 11003';
+  const businessAddressLine1 = '130-05 91st Ave';
+  const businessAddressLine2 = 'Richmond Hill, NY 11418';
   const businessPhone = '(646) 807-6937';
   const businessEmail = 'gmb.auto@yahoo.com';
   const serviceWriterName = 'M Rico';
