@@ -476,6 +476,11 @@ export function renderInvoiceDocumentHtml(
         border-spacing: 0;
         page-break-inside: auto;
       }
+      table,
+      th,
+      td {
+        border-color: #cbd5e1 !important;
+      }
       thead {
         display: table-header-group;
       }
@@ -526,6 +531,7 @@ export function renderInvoiceDocumentHtml(
         .invoice-card {
           max-width: none !important;
           width: 100% !important;
+          border: 1px solid #d1d5db !important;
           border-color: #d1d5db !important;
           border-radius: 8px !important;
           box-shadow: none !important;
@@ -551,20 +557,31 @@ export function renderInvoiceDocumentHtml(
           overflow: visible !important;
         }
         table {
+          border: 1px solid #cbd5e1 !important;
+          border-collapse: collapse !important;
           min-width: 0 !important;
           width: 100% !important;
         }
+        th,
+        td {
+          border: 1px solid #cbd5e1 !important;
+        }
         th {
+          background: #f3f4f6 !important;
+          color: #111827 !important;
           padding: 5px 6px !important;
           font-size: 9.5px !important;
           line-height: 1.15 !important;
         }
         td {
+          background: #ffffff !important;
+          color: #111827 !important;
           padding: 5px 6px !important;
           font-size: 10.5px !important;
           line-height: 1.25 !important;
         }
         .invoice-summary {
+          border-top: 1px solid #d8dee8 !important;
           padding-top: 10px !important;
         }
       }

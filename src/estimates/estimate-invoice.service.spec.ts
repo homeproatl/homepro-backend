@@ -724,6 +724,9 @@ describe('EstimateInvoiceService', () => {
     expect(html).toContain('print-color-adjust: exact;');
     expect(html).toContain('@media print');
     expect(html).toContain('padding: 10px !important;');
+    expect(html).toContain('border: 1px solid #cbd5e1 !important;');
+    expect(html).toContain('background: #f3f4f6 !important;');
+    expect(html).toContain('border-top: 1px solid #d8dee8 !important;');
     expect(html).toContain('M Rico');
   });
 

@@ -1741,6 +1741,7 @@ export class EstimateInvoiceService implements OnModuleDestroy {
         await page.setContent(html, {
           waitUntil: ['domcontentloaded', 'load', 'networkidle0'],
         });
+        await page.emulateMediaType('print');
         if (typeof page.waitForFunction === 'function') {
           await page
             .waitForFunction(
