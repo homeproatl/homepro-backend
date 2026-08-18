@@ -617,6 +617,11 @@ export class InvoiceWorkflowService {
         discount_value: line.discount_value,
         taxable: line.taxable,
         tax_id: line.tax_id ? String(line.tax_id) : null,
+        tax_ids: Array.isArray(line.tax_ids)
+          ? line.tax_ids.map((taxId) => String(taxId))
+          : line.tax_id
+            ? [String(line.tax_id)]
+            : [],
       })),
     };
   }

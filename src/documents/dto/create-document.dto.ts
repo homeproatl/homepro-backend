@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -205,6 +206,7 @@ export class DocumentLineItemWriteDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(8)
+  @ArrayUnique()
   @IsMongoId({ each: true })
   tax_ids?: string[];
 

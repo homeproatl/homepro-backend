@@ -181,7 +181,7 @@ export class ItemsService implements OnModuleInit {
               default_waste_basis_points: 0,
               default_markup_type: 'none',
               default_markup_value: 0,
-              taxable_default: true,
+              taxable_default: false,
               category: item.category ?? null,
               is_active: true,
             },
@@ -201,11 +201,12 @@ export class ItemsService implements OnModuleInit {
     const normalizedName = normalizeItemName(name);
     await this.assertUniqueName(normalizedName, organizationId);
 
+    const resolvedFields = resolveItemWriteFields(payload);
     await this.assertTaxIdsBelongToOrganization(
-      payload.tax_ids,
+      resolvedFields.tax_ids,
       organizationId,
     );
-    const fields = this.prepareItemWriteFields(resolveItemWriteFields(payload));
+    const fields = this.prepareItemWriteFields(resolvedFields);
     const item = await this.itemModel.create({
       organization_id: asObjectId(organizationId, 'organization id'),
       name,
@@ -289,28 +290,27 @@ export class ItemsService implements OnModuleInit {
       item.normalized_name = nextNormalized;
     }
 
+    const resolvedFields = resolveItemWriteFields(payload, {
+      item_type: item.item_type,
+      description_template: item.description_template,
+      default_rate_minor: item.default_rate_minor,
+      default_unit_of_measure: item.default_unit_of_measure,
+      default_internal_unit_cost_minor: item.default_internal_unit_cost_minor,
+      default_vendor_name: item.default_vendor_name,
+      default_sku_or_part_number: item.default_sku_or_part_number,
+      default_waste_basis_points: item.default_waste_basis_points,
+      default_markup_type: item.default_markup_type,
+      default_markup_value: item.default_markup_value,
+      taxable_default: item.taxable_default,
+      tax_ids: (item.tax_ids ?? []).map((taxId) => String(taxId)),
+      category: item.category,
+      private_notes: item.private_notes,
+    });
     await this.assertTaxIdsBelongToOrganization(
-      payload.tax_ids,
+      resolvedFields.tax_ids,
       organizationId,
     );
-    const fields = this.prepareItemWriteFields(
-      resolveItemWriteFields(payload, {
-        item_type: item.item_type,
-        description_template: item.description_template,
-        default_rate_minor: item.default_rate_minor,
-        default_unit_of_measure: item.default_unit_of_measure,
-        default_internal_unit_cost_minor: item.default_internal_unit_cost_minor,
-        default_vendor_name: item.default_vendor_name,
-        default_sku_or_part_number: item.default_sku_or_part_number,
-        default_waste_basis_points: item.default_waste_basis_points,
-        default_markup_type: item.default_markup_type,
-        default_markup_value: item.default_markup_value,
-        taxable_default: item.taxable_default,
-        tax_ids: (item.tax_ids ?? []).map((taxId) => String(taxId)),
-        category: item.category,
-        private_notes: item.private_notes,
-      }),
-    );
+    const fields = this.prepareItemWriteFields(resolvedFields);
 
     Object.assign(item, fields);
     await item.save();
@@ -524,6 +524,10 @@ export class ItemsService implements OnModuleInit {
       updated_at?: Date | string;
     };
 
+    const taxIds = Array.isArray(item.tax_ids)
+      ? item.tax_ids.map((taxId) => String(taxId))
+      : [];
+    const taxableDefault = item.taxable_default !== false && taxIds.length > 0;
     const serialized: SerializedItem = {
       id: this.serializeId(raw._id, 'item id'),
       name: item.name,
@@ -536,10 +540,8 @@ export class ItemsService implements OnModuleInit {
       default_waste_basis_points: item.default_waste_basis_points,
       default_markup_type: item.default_markup_type,
       default_markup_value: item.default_markup_value,
-      taxable_default: item.taxable_default !== false,
-      tax_ids: Array.isArray(item.tax_ids)
-        ? item.tax_ids.map((taxId) => String(taxId))
-        : [],
+      taxable_default: taxableDefault,
+      tax_ids: taxableDefault ? taxIds : [],
       category: item.category,
       private_notes: item.private_notes,
       is_active: item.is_active !== false,

@@ -19,6 +19,7 @@ export type ItemSnapshotSource = {
   default_markup_type: MarkupType;
   default_markup_value: number;
   taxable_default: boolean;
+  tax_ids?: string[];
 };
 
 export type DocumentLineItemSnapshotDraft = {
@@ -43,6 +44,7 @@ export type DocumentLineItemSnapshotDraft = {
   markup_type: MarkupType;
   markup_value: number;
   taxable: boolean;
+  tax_ids: string[];
 };
 
 export function mapItemToLineSnapshot(
@@ -53,6 +55,8 @@ export function mapItemToLineSnapshot(
     item.description_template?.trim() || item.name.trim() || 'Untitled item';
   const isMaterialish =
     item.item_type === 'material' || item.item_type === 'equipment';
+  const taxIds = [...new Set(item.tax_ids ?? [])].filter(Boolean);
+  const taxable = item.taxable_default && taxIds.length > 0;
 
   return {
     item_id: item.id,
@@ -69,6 +73,7 @@ export function mapItemToLineSnapshot(
     quantity_milli: options?.quantity_milli ?? 1000,
     markup_type: item.default_markup_type,
     markup_value: item.default_markup_value,
-    taxable: item.taxable_default,
+    taxable,
+    tax_ids: taxable ? taxIds : [],
   };
 }

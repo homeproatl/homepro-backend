@@ -249,13 +249,6 @@ export class UpdateDocumentSettingsDto {
   default_deposit_basis_points?: number;
 
   @IsOptional()
-  @Transform(({ value }) => transformInteger(value))
-  @IsInt()
-  @Min(0)
-  @Max(100_000)
-  default_sales_tax_basis_points?: number;
-
-  @IsOptional()
   @Transform(({ value }) => transformBoolean(value))
   @IsBoolean()
   default_show_client_signature?: boolean;

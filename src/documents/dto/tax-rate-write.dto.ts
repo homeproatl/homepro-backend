@@ -50,7 +50,7 @@ export class CreateTaxRateDto {
 
   @Transform(({ value }) => transformInteger(value))
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(TAX_RATE_FIELD_LIMITS.rate_basis_points_max)
   rate_basis_points!: number;
 
@@ -71,7 +71,7 @@ export class UpdateTaxRateDto {
   @IsOptional()
   @Transform(({ value }) => transformInteger(value))
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(TAX_RATE_FIELD_LIMITS.rate_basis_points_max)
   rate_basis_points?: number;
 

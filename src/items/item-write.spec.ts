@@ -14,6 +14,7 @@ describe('resolveItemWriteFields', () => {
     default_markup_type: 'none' as const,
     default_markup_value: 0,
     taxable_default: true,
+    tax_ids: ['507f1f77bcf86cd7994390e1'],
     category: 'Materials',
     private_notes: null,
   };
@@ -58,5 +59,36 @@ describe('resolveItemWriteFields', () => {
     expect(fields.default_vendor_name).toBe('Local Lumber');
     expect(fields.default_sku_or_part_number).toBe('PLY-4x8');
     expect(fields.default_waste_basis_points).toBe(1000);
+  });
+
+  it('requires a selected tax rate for a taxable item', () => {
+    const fields = resolveItemWriteFields({
+      taxable_default: true,
+      tax_ids: [],
+    } as UpdateItemDto);
+
+    expect(fields.taxable_default).toBe(false);
+    expect(fields.tax_ids).toEqual([]);
+  });
+
+  it('clears tax ids when an item is made non-taxable', () => {
+    const fields = resolveItemWriteFields(
+      { taxable_default: false } as UpdateItemDto,
+      materialExisting,
+    );
+
+    expect(fields.taxable_default).toBe(false);
+    expect(fields.tax_ids).toEqual([]);
+  });
+
+  it('deduplicates selected tax rates', () => {
+    const taxId = '507f1f77bcf86cd7994390e1';
+    const fields = resolveItemWriteFields({
+      taxable_default: true,
+      tax_ids: [taxId, taxId],
+    } as UpdateItemDto);
+
+    expect(fields.taxable_default).toBe(true);
+    expect(fields.tax_ids).toEqual([taxId]);
   });
 });

@@ -909,37 +909,78 @@ export class DocumentsService {
         await this.requireActiveItem(line.item_id, organizationId);
       }
 
-      const explicitTaxIds =
-        line.tax_ids && line.tax_ids.length > 0
-          ? line.tax_ids
-          : line.tax_id
-            ? [line.tax_id]
-            : [];
+      const existingLine =
+        line.id && existingById.has(line.id)
+          ? existingById.get(line.id)
+          : undefined;
+      if (line.id && !existingLine) {
+        throw new BadRequestException(`Unknown line id: ${line.id}`);
+      }
+
+      const taxRequested = line.taxable === true;
+      const explicitTaxIds = taxRequested
+        ? [
+            ...new Set(
+              line.tax_ids && line.tax_ids.length > 0
+                ? line.tax_ids
+                : line.tax_id
+                  ? [line.tax_id]
+                  : [],
+            ),
+          ]
+        : [];
       let taxRateBps = 0;
       let taxObjectId: Types.ObjectId | null = null;
       let taxObjectIds: Types.ObjectId[] = [];
       let taxNameSnapshot: string | null = null;
       if (explicitTaxIds.length > 0) {
-        const taxes = await this.taxRatesService.findActiveDocumentsByIds(
-          explicitTaxIds,
-          organizationId,
-        );
-        taxRateBps = taxes.reduce((sum, tax) => sum + tax.rate_basis_points, 0);
-        taxObjectIds = taxes.map((tax) => tax._id);
-        taxObjectId = taxObjectIds[0] ?? null;
-        taxNameSnapshot = taxes
-          .map(
-            (tax) =>
-              `${tax.name} (${(tax.rate_basis_points / 100).toFixed(3)}%)`,
-          )
-          .join(', ');
+        const existingTaxIds = existingLine
+          ? (existingLine.tax_ids?.length
+              ? existingLine.tax_ids
+              : existingLine.tax_id
+                ? [existingLine.tax_id]
+                : []
+            ).map(String)
+          : [];
+        const sameTaxSelection =
+          existingLine?.taxable === true &&
+          existingTaxIds.length === explicitTaxIds.length &&
+          explicitTaxIds.every((taxId) => existingTaxIds.includes(taxId));
+
+        if (
+          sameTaxSelection &&
+          (existingLine?.tax_rate_basis_points ?? 0) > 0
+        ) {
+          taxRateBps = existingLine.tax_rate_basis_points;
+          taxObjectIds = existingTaxIds.map((taxId) =>
+            asObjectId(taxId, 'tax rate id'),
+          );
+          taxObjectId = taxObjectIds[0] ?? null;
+          taxNameSnapshot = existingLine?.tax_name_snapshot ?? null;
+        } else {
+          const taxes = await this.taxRatesService.findActiveDocumentsByIds(
+            explicitTaxIds,
+            organizationId,
+          );
+          taxRateBps = taxes.reduce(
+            (sum, tax) => sum + tax.rate_basis_points,
+            0,
+          );
+          taxObjectIds = taxes.map((tax) => tax._id);
+          taxObjectId = taxObjectIds[0] ?? null;
+          taxNameSnapshot = taxes
+            .map(
+              (tax) =>
+                `${tax.name} (${(tax.rate_basis_points / 100).toFixed(3)}%)`,
+            )
+            .join(', ');
+        }
       }
 
       const markupType = line.markup_type ?? 'none';
       const markupValue = line.markup_value ?? 0;
       const discountType = line.discount_type ?? 'none';
       const discountValue = line.discount_value ?? 0;
-      const taxable = line.taxable ?? true;
 
       if (markupType === 'none' && markupValue !== 0) {
         throw new BadRequestException(
@@ -950,14 +991,6 @@ export class DocumentsService {
         throw new BadRequestException(
           'discount_value must be 0 when discount_type is none',
         );
-      }
-
-      const existingLine =
-        line.id && existingById.has(line.id)
-          ? existingById.get(line.id)
-          : undefined;
-      if (line.id && !existingLine) {
-        throw new BadRequestException(`Unknown line id: ${line.id}`);
       }
 
       const preserveInternal = options.preserveInternalFromExisting === true;
@@ -976,7 +1009,7 @@ export class DocumentsService {
           'not_needed')
         : (line.purchase_status ?? 'not_needed');
 
-      const applyTax = taxable && taxRateBps > 0;
+      const applyTax = taxRequested && taxRateBps > 0;
       let calculated: ReturnType<typeof calculateDocumentLine>;
       try {
         calculated = calculateDocumentLine({
@@ -1020,7 +1053,7 @@ export class DocumentsService {
         discount_type: discountType,
         discount_value: discountValue,
         discount_amount_minor: calculated.discount_amount_minor,
-        taxable,
+        taxable: applyTax,
         tax_id: taxObjectId,
         tax_ids: taxObjectIds,
         tax_name_snapshot: taxNameSnapshot,

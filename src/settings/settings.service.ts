@@ -71,7 +71,6 @@ export type AppSettingsContract = {
     default_estimate_expiration_days: number;
     default_invoice_due_days: number;
     default_deposit_basis_points: number;
-    default_sales_tax_basis_points: number;
     default_show_client_signature: boolean;
     default_show_company_signature: boolean;
     default_estimate_email_message: string | null;
@@ -110,7 +109,6 @@ export type TechnicianAppSettingsContract = {
     default_estimate_expiration_days: number;
     default_invoice_due_days: number;
     default_deposit_basis_points: number;
-    default_sales_tax_basis_points: number;
     default_show_client_signature: boolean;
     default_show_company_signature: boolean;
     default_estimate_email_message: string | null;
@@ -358,8 +356,6 @@ export class SettingsService {
           settings.documents.default_invoice_due_days ?? 30,
         default_deposit_basis_points:
           settings.documents.default_deposit_basis_points ?? 0,
-        default_sales_tax_basis_points:
-          settings.documents.default_sales_tax_basis_points ?? 0,
         default_show_client_signature:
           settings.documents.default_show_client_signature === true,
         default_show_company_signature:
@@ -413,8 +409,6 @@ export class SettingsService {
         default_invoice_due_days: full.documents.default_invoice_due_days,
         default_deposit_basis_points:
           full.documents.default_deposit_basis_points,
-        default_sales_tax_basis_points:
-          full.documents.default_sales_tax_basis_points,
         default_show_client_signature:
           full.documents.default_show_client_signature,
         default_show_company_signature:
@@ -520,10 +514,6 @@ export class SettingsService {
     if (patch.default_deposit_basis_points !== undefined) {
       settings.documents.default_deposit_basis_points =
         patch.default_deposit_basis_points;
-    }
-    if (patch.default_sales_tax_basis_points !== undefined) {
-      settings.documents.default_sales_tax_basis_points =
-        patch.default_sales_tax_basis_points;
     }
     if (patch.default_show_client_signature !== undefined) {
       settings.documents.default_show_client_signature =
@@ -637,7 +627,6 @@ export class SettingsService {
         default_estimate_expiration_days: 30,
         default_invoice_due_days: 30,
         default_deposit_basis_points: 0,
-        default_sales_tax_basis_points: 0,
         default_show_client_signature: false,
         default_show_company_signature: false,
         default_estimate_email_message: DEFAULT_ESTIMATE_EMAIL_MESSAGE,

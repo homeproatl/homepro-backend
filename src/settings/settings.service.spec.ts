@@ -102,7 +102,6 @@ describe('SettingsService', () => {
     expect(settings.documents.default_payment_terms).toBe(
       'Payment is due within 30 days.',
     );
-    expect(settings.documents.default_sales_tax_basis_points).toBe(0);
     expect(settings.documents.default_estimate_email_message).toContain(
       'attached estimate',
     );

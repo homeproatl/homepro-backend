@@ -168,7 +168,7 @@ describe('DocumentsService', () => {
           business_timezone: 'America/New_York',
           account: {},
           company: {},
-          documents: { default_sales_tax_basis_points: 800 },
+          documents: {},
           preferences: { currency: 'usd', locale: 'en-US' },
         }),
       },
@@ -200,6 +200,15 @@ describe('DocumentsService', () => {
     expect(persisted?.total_minor).toBe(10_000);
     expect(persisted?.subtotal_minor).toBe(10_000);
     expect(persisted?.tax_total_minor).toBe(0);
+    expect(
+      (persisted?.line_items as Array<Record<string, unknown>>)[0],
+    ).toMatchObject({
+      taxable: false,
+      tax_id: null,
+      tax_ids: [],
+      tax_rate_basis_points: 0,
+      tax_amount_minor: 0,
+    });
     expect(result.total_minor).toBe(10_000);
     expect(result.number).toBe('EST-000001');
     // Vehicle is never required on create payload.
@@ -276,6 +285,70 @@ describe('DocumentsService', () => {
     expect(line.tax_name_snapshot).toContain('sales');
     expect(result.tax_total_minor).toBe(1100);
     expect(result.total_minor).toBe(11_100);
+  });
+
+  it('preserves an unchanged historical tax snapshot after the tax is archived', async () => {
+    const lineId = new Types.ObjectId();
+    const taxId = new Types.ObjectId('507f1f77bcf86cd7994390e1');
+    const findActiveDocumentsByIds = jest.fn();
+    const service = createService({
+      taxRates: { findActiveDocumentsByIds },
+    });
+
+    const built = await (
+      service as unknown as {
+        buildCalculatedLines: (
+          lines: Array<Record<string, unknown>>,
+          organizationId: string,
+          options: Record<string, unknown>,
+        ) => Promise<Array<Record<string, unknown>>>;
+      }
+    ).buildCalculatedLines(
+      [
+        {
+          id: String(lineId),
+          sort_order: 0,
+          line_type: 'service',
+          description: 'Existing taxable work',
+          rate_minor: 10_000,
+          quantity_milli: 1000,
+          markup_type: 'none',
+          markup_value: 0,
+          discount_type: 'none',
+          discount_value: 0,
+          taxable: true,
+          tax_ids: [String(taxId)],
+          photo_asset_ids: [],
+        },
+      ],
+      ORG_ID,
+      {
+        existingLines: [
+          {
+            _id: lineId,
+            taxable: true,
+            tax_id: taxId,
+            tax_ids: [taxId],
+            tax_name_snapshot: 'Sales Tax (8.000%)',
+            tax_rate_basis_points: 800,
+            vendor_name: null,
+            internal_unit_cost_minor: null,
+            waste_basis_points: 0,
+            purchase_status: 'not_needed',
+            photo_asset_ids: [],
+          },
+        ],
+      },
+    );
+
+    expect(findActiveDocumentsByIds).not.toHaveBeenCalled();
+    expect(built[0]).toMatchObject({
+      taxable: true,
+      tax_ids: [taxId],
+      tax_rate_basis_points: 800,
+      tax_amount_minor: 800,
+      total_minor: 10_800,
+    });
   });
 
   it('rejects inactive (archived) clients on create', async () => {

@@ -46,7 +46,7 @@ export class TaxRate {
   @Prop({
     type: Number,
     required: true,
-    min: 0,
+    min: 1,
     max: TAX_RATE_FIELD_LIMITS.rate_basis_points_max,
   })
   rate_basis_points!: number;

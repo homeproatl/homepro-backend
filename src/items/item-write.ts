@@ -89,6 +89,24 @@ export function resolveItemWriteFields(
     return existingValue ?? clearedValue;
   };
 
+  const selectedTaxIds = [
+    ...new Set(
+      (payload.tax_ids !== undefined
+        ? payload.tax_ids
+        : (existing?.tax_ids ?? []).map((taxId) => String(taxId))
+      )
+        .map((taxId) => String(taxId))
+        .filter(Boolean),
+    ),
+  ];
+  const taxableRequested =
+    payload.taxable_default !== undefined
+      ? payload.taxable_default
+      : payload.tax_ids !== undefined
+        ? selectedTaxIds.length > 0
+        : (existing?.taxable_default ?? false);
+  const taxableDefault = taxableRequested && selectedTaxIds.length > 0;
+
   return {
     item_type,
     description_template:
@@ -126,14 +144,8 @@ export function resolveItemWriteFields(
     ),
     default_markup_type,
     default_markup_value,
-    taxable_default:
-      payload.taxable_default !== undefined
-        ? payload.taxable_default
-        : (existing?.taxable_default ?? true),
-    tax_ids:
-      payload.tax_ids !== undefined
-        ? payload.tax_ids
-        : (existing?.tax_ids ?? []).map((taxId) => String(taxId)),
+    taxable_default: taxableDefault,
+    tax_ids: taxableDefault ? selectedTaxIds : [],
     category:
       payload.category !== undefined
         ? payload.category

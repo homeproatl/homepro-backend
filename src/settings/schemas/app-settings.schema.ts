@@ -206,10 +206,6 @@ export class DocumentSettings {
   @Prop({ type: Number, min: 0, max: 100_000, default: 0 })
   default_deposit_basis_points!: number;
 
-  /** Sales tax as basis points (e.g. 800 = 8%). */
-  @Prop({ type: Number, min: 0, max: 100_000, default: 0 })
-  default_sales_tax_basis_points!: number;
-
   @Prop({ type: Boolean, default: false })
   default_show_client_signature!: boolean;
 
