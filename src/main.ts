@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import {
@@ -10,12 +11,19 @@ import {
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
   const allowedOrigins = getAllowedFrontendOrigins(configService);
 
   enableTrustedProxy(app);
   app.use((request: Request, response: Response, next: NextFunction) => {
+    const forwardedRequestId = request.headers['x-request-id'];
+    const requestId =
+      typeof forwardedRequestId === 'string' && forwardedRequestId.trim()
+        ? forwardedRequestId.trim().slice(0, 128)
+        : randomUUID();
+
+    response.setHeader('X-Request-Id', requestId);
     response.setHeader(
       'Content-Security-Policy',
       "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
@@ -55,7 +63,7 @@ async function bootstrap() {
       callback(null, !origin || allowedOrigins.has(origin));
     },
     methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Stripe-Signature'],
     credentials: true,
   });
   app.useGlobalPipes(
@@ -88,8 +96,9 @@ async function bootstrap() {
   }
 
   const appUrl = await app.getUrl();
-  logger.log(`Rico backend listening on ${appUrl}`);
+  logger.log(`Contractor backend listening on ${appUrl}`);
   logger.log(`Health check available at ${appUrl}/health`);
+  logger.log(`Readiness check available at ${appUrl}/ready`);
   logger.log(
     `Allowed frontend origins: ${Array.from(allowedOrigins).join(', ')}`,
   );

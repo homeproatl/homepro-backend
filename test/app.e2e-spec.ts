@@ -16,10 +16,38 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
+  afterEach(async () => {
+    await app.close();
+  });
+
   it('/ (GET)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            service: 'contractor-backend',
+            status: 'ok',
+            health_url: '/health',
+            readiness_url: '/ready',
+          }),
+        );
+      });
+  });
+
+  it('/ready (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/ready')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            service: 'contractor-backend',
+            status: 'ready',
+          }),
+        );
+        expect(body.started_at).toEqual(expect.any(String));
+      });
   });
 });

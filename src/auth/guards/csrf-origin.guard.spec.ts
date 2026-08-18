@@ -6,7 +6,7 @@ describe('CsrfOriginGuard', () => {
   const configService = {
     get: jest.fn((key: string) => {
       if (key === 'FRONTEND_ORIGIN') {
-        return 'https://www.gmbworkshop.shop';
+        return 'https://www.homepro.example';
       }
 
       return undefined;
@@ -20,7 +20,7 @@ describe('CsrfOriginGuard', () => {
       switchToHttp: () => ({
         getRequest: () => ({
           headers: {
-            origin: 'https://www.gmbworkshop.shop',
+            origin: 'https://www.homepro.example',
           },
         }),
       }),

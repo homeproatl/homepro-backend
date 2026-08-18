@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
+import { Organization } from '../../organizations/schemas/organization.schema';
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
 
@@ -12,6 +13,14 @@ export type AuditLogDocument = HydratedDocument<AuditLog>;
   },
 })
 export class AuditLog {
+  @Prop({
+    type: Types.ObjectId,
+    ref: Organization.name,
+    required: true,
+    index: true,
+  })
+  organization_id!: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: User.name, default: null, index: true })
   actor_user_id!: Types.ObjectId | null;
 
@@ -33,4 +42,9 @@ export class AuditLog {
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
 
-AuditLogSchema.index({ entity_type: 1, entity_id: 1, created_at: -1 });
+AuditLogSchema.index({
+  organization_id: 1,
+  entity_type: 1,
+  entity_id: 1,
+  created_at: -1,
+});

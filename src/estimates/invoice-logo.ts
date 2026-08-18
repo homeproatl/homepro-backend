@@ -1,13 +1,20 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-export const INVOICE_LOGO_CONTENT_ID = 'invoice-logo@gmbworkshop';
+export const INVOICE_LOGO_CONTENT_ID = 'invoice-logo@homepro';
 const INVOICE_LOGO_MIME_TYPE = 'image/jpeg';
 
 function resolveInvoiceLogoPath() {
   const candidates = [
     join(__dirname, 'assets', 'invoice-logo.jpg'),
-    join(process.cwd(), 'dist', 'src', 'estimates', 'assets', 'invoice-logo.jpg'),
+    join(
+      process.cwd(),
+      'dist',
+      'src',
+      'estimates',
+      'assets',
+      'invoice-logo.jpg',
+    ),
     join(process.cwd(), 'src', 'estimates', 'assets', 'invoice-logo.jpg'),
   ];
 

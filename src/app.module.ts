@@ -6,12 +6,15 @@ import { AppService } from './app.service';
 import { validateEnv } from './config/env.validation';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { ServiceCatalogModule } from './service-catalog/service-catalog.module';
-import { CustomersModule } from './customers/customers.module';
-import { VehiclesModule } from './vehicles/vehicles.module';
+import { OrganizationsModule } from './organizations/organizations.module';
+import { ItemsModule } from './items/items.module';
+import { ClientsModule } from './clients/clients.module';
 import { EstimatesModule } from './estimates/estimates.module';
+import { DocumentsModule } from './documents/documents.module';
+import { InvoicesModule } from './invoices/invoices.module';
 import { SettingsModule } from './settings/settings.module';
-import { TagsModule } from './tags/tags.module';
+import { AssetsModule } from './assets/assets.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -29,14 +32,17 @@ import { TagsModule } from './tags/tags.module';
         w: 'majority',
       }),
     }),
+    OrganizationsModule,
     UsersModule,
     AuthModule,
-    ServiceCatalogModule,
-    CustomersModule,
-    VehiclesModule,
+    ItemsModule,
+    ClientsModule,
     EstimatesModule,
+    DocumentsModule,
+    InvoicesModule,
     SettingsModule,
-    TagsModule,
+    AssetsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

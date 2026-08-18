@@ -1,8 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import {
-  clearRefreshTokenCookie,
-  setRefreshTokenCookie,
-} from './auth-cookie';
+import { clearRefreshTokenCookie, setRefreshTokenCookie } from './auth-cookie';
 
 describe('auth-cookie', () => {
   it('uses SameSite=lax for refresh cookies in production', () => {
@@ -29,7 +26,7 @@ describe('auth-cookie', () => {
     setRefreshTokenCookie(response as never, configService, 'refresh-token');
 
     expect(response.cookie).toHaveBeenCalledWith(
-      'rico_refresh_token',
+      'home_pro_refresh_token',
       'refresh-token',
       expect.objectContaining({
         httpOnly: true,
@@ -52,7 +49,7 @@ describe('auth-cookie', () => {
     clearRefreshTokenCookie(response as never, configService);
 
     expect(response.clearCookie).toHaveBeenCalledWith(
-      'rico_refresh_token',
+      'home_pro_refresh_token',
       expect.objectContaining({
         httpOnly: true,
         secure: true,

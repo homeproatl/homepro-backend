@@ -8,11 +8,13 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UsersBootstrapService } from './users-bootstrap.service';
+import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Module({
   imports: [
     ConfigModule,
     JwtModule.register({}),
+    OrganizationsModule,
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [UsersController],

@@ -1,11 +1,11 @@
-# Rico Backend
+# Contractor Backend
 
-NestJS API for the Rico admin app.
+NestJS API for Joseph's construction operations app.
 
 ## What it does
 
-- owns the canonical domain logic for estimates, customers, vehicles, services, auth, and settings
-- stores scheduling and billing state
+- owns the canonical domain logic for clients, items, estimates, invoices, payments, documents, auth, and settings
+- stores operational, billing, and document delivery state
 - exposes the API consumed directly by the frontend
  
 The frontend reaches this API through its same-origin `/api` proxy layer.
@@ -30,25 +30,30 @@ cp .env.example .env
 
 ```env
 APP_PORT=4000
-MONGO_URI=mongodb://127.0.0.1:27017/rico?replicaSet=rs0
-FRONTEND_ORIGIN=http://127.0.0.1:3000
+MONGO_URI=mongodb://127.0.0.1:27017/contractor?replicaSet=rs0
+FRONTEND_ORIGIN=http://localhost:3000
+PUBLIC_APP_BASE_URL=http://localhost:3000
+OUTBOX_ENCRYPTION_KEY=replace-with-32-byte-outbox-encryption-key
 
 JWT_ACCESS_SECRET=replace-with-secure-access-secret
 JWT_REFRESH_SECRET=replace-with-secure-refresh-secret
 JWT_ACCESS_TTL=15m
 JWT_REFRESH_TTL=7d
 
-OWNER_ADMIN_NAME=Rico
-OWNER_ADMIN_EMAIL=rico@admin.com
+OWNER_ADMIN_NAME=Joseph
+OWNER_ADMIN_EMAIL=joseph@admin.com
 OWNER_ADMIN_PASSWORD=replace-with-secure-password
 ```
 
 `FRONTEND_ORIGIN` controls which browser origin is allowed to call the API during development or deployment.
+`PUBLIC_APP_BASE_URL` controls the secure estimate/invoice links sent to clients.
+`OUTBOX_ENCRYPTION_KEY` protects document-email outbox token payloads and is required at startup.
 
-For the live frontend, set:
+For the live frontend, set the production app origin:
 
 ```env
-FRONTEND_ORIGIN=https://www.gmbworkshop.shop
+FRONTEND_ORIGIN=https://your-production-domain.example
+PUBLIC_APP_BASE_URL=https://your-production-domain.example
 ```
 
 `OWNER_ADMIN_*` only matters for `npm run seed:owner-admin` and `npm run seed:bootstrap`. It is not required for normal API startup.
@@ -61,7 +66,7 @@ Recommended configuration:
 
 ```env
 INVOICE_EMAIL_TRANSPORT=RESEND
-INVOICE_EMAIL_FROM=Gmb Workshop <billing@gmbworkshop.shop>
+INVOICE_EMAIL_FROM=Home Pro <billing@your-production-domain.example>
 INVOICE_EMAIL_RESEND_API_KEY=re_replace_with_your_resend_api_key
 ```
 
@@ -91,8 +96,8 @@ npm run reset:clean-sheet
 # create the owner admin user
 npm run seed:owner-admin
 
-# seed a minimal service catalog
-npm run seed:services
+# seed a minimal item catalog
+npm run seed:items
 
 # seed the common bootstrap data
 npm run seed:bootstrap
@@ -105,7 +110,7 @@ npm run reset:clean-sheet
 npm run seed:bootstrap
 ```
 
-`seed:bootstrap` creates the configured owner admin and the minimal service catalog used by the estimate flow.
+`seed:bootstrap` creates the configured owner admin and the minimal item catalog used by the estimate and invoice flow.
 
 ## Verification
 

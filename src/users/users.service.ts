@@ -10,13 +10,15 @@ import * as bcrypt from 'bcryptjs';
 import { UserRole } from '../common/enums/user-role.enum';
 import { UserContract } from '../common/contracts/domain.contract';
 import { asObjectId } from '../common/utils/object-id';
+import { withOrganizationScope } from '../common/utils/organization-scope';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 export type AuthenticatedUser = Pick<
   UserContract,
-  'id' | 'name' | 'email' | 'role'
+  'id' | 'name' | 'email' | 'role' | 'organization_id'
 >;
 
 @Injectable()
@@ -24,6 +26,7 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly configService: ConfigService,
+    private readonly organizationsService: OrganizationsService,
   ) {}
 
   async findByEmail(email: string): Promise<UserDocument | null> {
@@ -37,6 +40,7 @@ export class UsersService {
   async createUser(
     payload: CreateUserDto,
     actorUserId: string,
+    organizationId: string,
   ): Promise<UserContract> {
     const email = payload.email.toLowerCase();
     const existing = await this.findByEmail(email);
@@ -47,6 +51,7 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(payload.password, 10);
 
     const created = await this.userModel.create({
+      organization_id: asObjectId(organizationId, 'organization id'),
       name: payload.name,
       email,
       phone: payload.phone ?? null,
@@ -59,16 +64,22 @@ export class UsersService {
     return this.toUserContract(created);
   }
 
-  async getUsers(): Promise<UserContract[]> {
+  async getUsers(organizationId: string): Promise<UserContract[]> {
     const users = await this.userModel
-      .find({}, { password_hash: 0 })
+      .find(withOrganizationScope(organizationId, {}), { password_hash: 0 })
       .sort({ created_at: -1 })
       .exec();
     return users.map((user) => this.toUserContract(user));
   }
 
-  async getUserById(id: string): Promise<UserContract> {
-    const user = await this.findById(id);
+  async getUserById(id: string, organizationId: string): Promise<UserContract> {
+    const user = await this.userModel
+      .findOne(
+        withOrganizationScope(organizationId, {
+          _id: asObjectId(id, 'user id'),
+        }),
+      )
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -76,9 +87,15 @@ export class UsersService {
     return this.toUserContract(user);
   }
 
-  async updateUser(id: string, payload: UpdateUserDto): Promise<UserContract> {
+  async updateUser(
+    id: string,
+    payload: UpdateUserDto,
+    organizationId: string,
+  ): Promise<UserContract> {
     const userId = asObjectId(id, 'user id');
-    const existing = await this.userModel.findById(userId).exec();
+    const existing = await this.userModel
+      .findOne(withOrganizationScope(organizationId, { _id: userId }))
+      .exec();
     if (!existing) {
       throw new NotFoundException('User not found');
     }
@@ -131,6 +148,7 @@ export class UsersService {
   }
 
   async ensureOwnerAdmin(): Promise<UserDocument> {
+    const organization = await this.organizationsService.ensureFixedCompany();
     const email = this.configService
       .getOrThrow<string>('OWNER_ADMIN_EMAIL')
       .toLowerCase();
@@ -143,6 +161,11 @@ export class UsersService {
     if (existingUser) {
       let needsSave = false;
       let shouldInvalidateAuthSession = false;
+
+      if (!existingUser.organization_id) {
+        existingUser.organization_id = organization._id;
+        needsSave = true;
+      }
 
       if (existingUser.name !== name) {
         existingUser.name = name;
@@ -190,6 +213,7 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(password, 10);
 
     return this.userModel.create({
+      organization_id: organization._id,
       name,
       email,
       password_hash: passwordHash,
@@ -206,6 +230,9 @@ export class UsersService {
       name: user.name,
       email: user.email,
       role: user.role,
+      organization_id: user.organization_id
+        ? String(user.organization_id)
+        : null,
     };
   }
 
@@ -216,6 +243,9 @@ export class UsersService {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      organization_id: user.organization_id
+        ? String(user.organization_id)
+        : null,
       is_active: user.is_active,
       created_by: user.created_by ? String(user.created_by) : null,
       created_at: (

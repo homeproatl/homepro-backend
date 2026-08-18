@@ -8,98 +8,59 @@ describe('ListEstimatesQueryDto', () => {
     forbidNonWhitelisted: true,
   });
 
-  it('accepts valid customer and vehicle filters', async () => {
+  it('accepts canonical estimate list filters', async () => {
     const transformed = (await pipe.transform(
       {
-        customer_id: '507f1f77bcf86cd799439011',
-        vehicle_id: '507f1f77bcf86cd799439012',
-        invoice_status: 'STALE',
-        ready_to_invoice: 'true',
-        overdue: 'false',
-      },
-      {
-        type: 'query',
-        metatype: ListEstimatesQueryDto,
-      },
-    )) as ListEstimatesQueryDto;
-
-    expect(transformed).toEqual({
-      customer_id: '507f1f77bcf86cd799439011',
-      vehicle_id: '507f1f77bcf86cd799439012',
-      invoice_status: 'STALE',
-      ready_to_invoice: true,
-      overdue: false,
-    });
-  });
-
-  it('accepts pagination, search, status, and sort filters', async () => {
-    const transformed = (await pipe.transform(
-      {
-        paginated: 'true',
-        page: '2',
+        page: '1',
         page_size: '25',
-        search: 'brake',
-        status: 'SCHEDULED',
-        sort: 'newest',
+        status: 'pending,approved',
+        client_id: '507f1f77bcf86cd799439011',
+        search: 'roof',
+        date_from: '2026-01-01',
+        date_to: '2026-01-31T23:59:59.000Z',
+        amount_min_minor: '100',
+        amount_max_minor: '50000',
+        email_state: 'sent',
+        sort: 'issue_date',
+        direction: 'desc',
       },
-      {
-        type: 'query',
-        metatype: ListEstimatesQueryDto,
-      },
+      { type: 'query', metatype: ListEstimatesQueryDto },
     )) as ListEstimatesQueryDto;
 
     expect(transformed).toEqual({
-      paginated: true,
-      page: 2,
+      page: 1,
       page_size: 25,
-      search: 'brake',
-      status: 'SCHEDULED',
-      sort: 'newest',
+      status: ['pending', 'approved'],
+      client_id: '507f1f77bcf86cd799439011',
+      search: 'roof',
+      date_from: '2026-01-01',
+      date_to: '2026-01-31T23:59:59.000Z',
+      amount_min_minor: 100,
+      amount_max_minor: 50_000,
+      email_state: 'sent',
+      sort: 'issue_date',
+      direction: 'desc',
     });
   });
 
-  it('accepts the active status shortcut used by dashboard links', async () => {
-    const transformed = (await pipe.transform(
-      {
-        status: 'active',
-      },
-      {
-        type: 'query',
-        metatype: ListEstimatesQueryDto,
-      },
-    )) as ListEstimatesQueryDto;
-
-    expect(transformed).toEqual({
-      status: 'active',
-    });
-  });
-
-  it('rejects malformed ids', async () => {
+  it('rejects fields outside the estimate document query contract', async () => {
     await expect(
       pipe.transform(
         {
-          customer_id: 'bad-customer',
-          vehicle_id: 'bad-vehicle',
+          customer_id: '507f1f77bcf86cd799439011',
+          vehicle_id: '507f1f77bcf86cd799439012',
+          paginated: 'true',
         },
-        {
-          type: 'query',
-          metatype: ListEstimatesQueryDto,
-        },
+        { type: 'query', metatype: ListEstimatesQueryDto },
       ),
     ).rejects.toThrow();
   });
 
-  it('rejects malformed invoice filters', async () => {
+  it('rejects malformed client ids', async () => {
     await expect(
       pipe.transform(
-        {
-          invoice_status: 'SENT_BUT_NOPE',
-          ready_to_invoice: 'maybe',
-        },
-        {
-          type: 'query',
-          metatype: ListEstimatesQueryDto,
-        },
+        { client_id: 'bad-client' },
+        { type: 'query', metatype: ListEstimatesQueryDto },
       ),
     ).rejects.toThrow();
   });

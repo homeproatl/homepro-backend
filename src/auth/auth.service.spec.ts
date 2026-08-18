@@ -36,7 +36,7 @@ describe('AuthService', () => {
     const usersService = {
       findById: jest.fn().mockResolvedValue({
         id: '507f1f77bcf86cd799439011',
-        email: 'rico@admin.com',
+        email: 'joseph@admin.com',
         role: 'ADMIN',
         is_active: true,
         token_version: 4,
@@ -46,7 +46,7 @@ describe('AuthService', () => {
     const jwtService = {
       verify: jest.fn().mockReturnValue({
         sub: '507f1f77bcf86cd799439011',
-        email: 'rico@admin.com',
+        email: 'joseph@admin.com',
         role: 'ADMIN',
         type: 'refresh',
         token_version: 3,
@@ -65,7 +65,7 @@ describe('AuthService', () => {
   it('keeps refresh stable after a successful refresh so multiple tabs can restore together', async () => {
     const user = {
       id: '507f1f77bcf86cd799439011',
-      email: 'rico@admin.com',
+      email: 'joseph@admin.com',
       role: 'ADMIN',
       is_active: true,
       token_version: 4,
@@ -90,9 +90,7 @@ describe('AuthService', () => {
         type: 'refresh',
         token_version: 4,
       }),
-      signAsync: jest
-        .fn()
-        .mockResolvedValueOnce('next-access-token'),
+      signAsync: jest.fn().mockResolvedValueOnce('next-access-token'),
     } as unknown as JwtService;
     const configService = {
       getOrThrow: jest.fn((key: string) => {

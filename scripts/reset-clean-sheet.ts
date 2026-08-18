@@ -25,12 +25,15 @@ async function main() {
     if (!collection.name || keep.has(collection.name)) {
       continue;
     }
-    await db.collection(collection.name).drop().catch((error: unknown) => {
-      const codeName = (error as { codeName?: string }).codeName;
-      if (codeName !== 'NamespaceNotFound') {
-        throw error;
-      }
-    });
+    await db
+      .collection(collection.name)
+      .drop()
+      .catch((error: unknown) => {
+        const codeName = (error as { codeName?: string }).codeName;
+        if (codeName !== 'NamespaceNotFound') {
+          throw error;
+        }
+      });
     dropped.push(collection.name);
   }
 

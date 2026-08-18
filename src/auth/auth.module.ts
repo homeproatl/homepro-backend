@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UsersModule } from '../users/users.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { AuthGuard } from './guards/auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthRateLimitService } from './auth-rate-limit.service';
@@ -21,6 +22,7 @@ import {
     ConfigModule,
     JwtModule.register({}),
     UsersModule,
+    OrganizationsModule,
     MongooseModule.forFeature([
       { name: AuthRateLimit.name, schema: AuthRateLimitSchema },
     ]),
@@ -41,6 +43,7 @@ import {
     RolesGuard,
     JwtModule,
     UsersModule,
+    OrganizationsModule,
     AuthRateLimitService,
     CsrfOriginGuard,
     LoginRateLimitGuard,

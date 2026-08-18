@@ -1,103 +1,109 @@
 import { Transform } from 'class-transformer';
 import {
-  IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsMongoId,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
-import { EstimateInvoiceSnapshotStatus } from '../enums/estimate-invoice-snapshot-status.enum';
-import { EstimateStatus } from '../../common/enums/estimate-status.enum';
-
-export const JOB_INVOICE_LIST_STATUSES = [
-  ...Object.values(EstimateInvoiceSnapshotStatus),
-  'NONE',
-] as const;
-export const ESTIMATE_ADMIN_INVOICE_WORKFLOW_STATES = [
-  'blocked',
-  'ready_to_send',
-  'sent',
-  'needs_resend',
-] as const;
-
-function transformBoolean(value: unknown) {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  if (value === true || value === 'true') {
-    return true;
-  }
-
-  if (value === false || value === 'false') {
-    return false;
-  }
-
-  return value;
-}
+import {
+  ESTIMATE_LIST_SORT_DIRECTIONS,
+  ESTIMATE_LIST_SORT_FIELDS,
+} from '../../documents/dto/list-estimate-documents-query.dto';
+import {
+  DOCUMENT_FIELD_LIMITS,
+  EMAIL_STATE_VALUES,
+} from '../../documents/schemas/document.schema';
 
 function transformNumber(value: unknown) {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
-
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : value;
 }
 
-export const ESTIMATE_LIST_SORT_MODES = ['nearest_upcoming', 'newest'] as const;
-export const ESTIMATE_LIST_STATUS_FILTERS = [
-  ...Object.values(EstimateStatus),
-  'active',
-] as const;
+function normalizeSearchValue(value: unknown) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : undefined;
+}
+
+/**
+ * Accepts repeated or comma-separated status values.
+ */
+function transformStatusQuery(value: unknown): string | string[] | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const rawValues = Array.isArray(value) ? value : [value];
+  const statuses = rawValues
+    .flatMap((entry) => String(entry).split(','))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (statuses.length === 0) {
+    return undefined;
+  }
+  if (statuses.length === 1) {
+    return statuses[0];
+  }
+  return [...new Set(statuses)];
+}
 
 export class ListEstimatesQueryDto {
   @IsOptional()
   @IsMongoId()
-  customer_id?: string;
+  client_id?: string;
 
   @IsOptional()
-  @IsMongoId()
-  vehicle_id?: string;
-
-  @IsOptional()
-  @IsIn(JOB_INVOICE_LIST_STATUSES)
-  invoice_status?: (typeof JOB_INVOICE_LIST_STATUSES)[number];
-
-  @IsOptional()
-  @IsIn(ESTIMATE_ADMIN_INVOICE_WORKFLOW_STATES)
-  admin_invoice_workflow_state?:
-    (typeof ESTIMATE_ADMIN_INVOICE_WORKFLOW_STATES)[number];
-
-  @IsOptional()
-  @Transform(({ value }) => transformBoolean(value))
-  @IsBoolean()
-  ready_to_invoice?: boolean;
-
-  @IsOptional()
-  @Transform(({ value }) => transformBoolean(value))
-  @IsBoolean()
-  overdue?: boolean;
-
-  @IsOptional()
+  @Transform(({ value }) => normalizeSearchValue(value))
   @IsString()
+  @MaxLength(120)
   search?: string;
 
   @IsOptional()
-  @IsIn(ESTIMATE_LIST_STATUS_FILTERS)
-  status?: (typeof ESTIMATE_LIST_STATUS_FILTERS)[number];
+  @Transform(({ value }) => transformStatusQuery(value))
+  status?: string | string[];
 
   @IsOptional()
-  @IsIn(ESTIMATE_LIST_SORT_MODES)
-  sort?: (typeof ESTIMATE_LIST_SORT_MODES)[number];
+  @IsIn(ESTIMATE_LIST_SORT_FIELDS)
+  sort?: string;
 
   @IsOptional()
-  @Transform(({ value }) => transformBoolean(value))
-  @IsBoolean()
-  paginated?: boolean;
+  @IsIn(ESTIMATE_LIST_SORT_DIRECTIONS)
+  direction?: (typeof ESTIMATE_LIST_SORT_DIRECTIONS)[number];
+
+  @IsOptional()
+  @IsDateString()
+  date_from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date_to?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => transformNumber(value))
+  @IsInt()
+  @Min(0)
+  @Max(DOCUMENT_FIELD_LIMITS.rate_minor_max)
+  amount_min_minor?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => transformNumber(value))
+  @IsInt()
+  @Min(0)
+  @Max(DOCUMENT_FIELD_LIMITS.rate_minor_max)
+  amount_max_minor?: number;
+
+  @IsOptional()
+  @IsIn(EMAIL_STATE_VALUES)
+  email_state?: (typeof EMAIL_STATE_VALUES)[number];
 
   @IsOptional()
   @Transform(({ value }) => transformNumber(value))
@@ -109,6 +115,6 @@ export class ListEstimatesQueryDto {
   @Transform(({ value }) => transformNumber(value))
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(DOCUMENT_FIELD_LIMITS.page_size_max)
   page_size?: number;
 }

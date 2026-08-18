@@ -51,7 +51,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     clearRefreshTokenCookie(response, this.configService);
-    return this.authService.logout(request.user!.sub);
+    return this.authService.logout(request.actor!.user_id);
   }
 
   @UseGuards(CsrfOriginGuard, RefreshRateLimitGuard)
@@ -77,6 +77,6 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('me')
   me(@Req() request: AuthenticatedRequest) {
-    return this.authService.me(request.user!.sub);
+    return this.authService.me(request.actor!.user_id);
   }
 }

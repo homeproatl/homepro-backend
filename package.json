@@ -1,5 +1,5 @@
 {
-  "name": "rico-backend",
+  "name": "contractor-backend",
   "version": "0.0.1",
   "description": "",
   "author": "",
@@ -17,13 +17,11 @@
     "typecheck": "tsc --noEmit",
     "reset:clean-sheet": "ts-node -r tsconfig-paths/register scripts/reset-clean-sheet.ts",
     "seed:owner-admin": "ts-node -r tsconfig-paths/register scripts/seed-owner-admin.ts",
-    "seed:services": "ts-node -r tsconfig-paths/register scripts/seed-minimal-services.ts",
+    "seed:items": "ts-node -r tsconfig-paths/register scripts/seed-minimal-items.ts",
     "seed:bootstrap": "ts-node -r tsconfig-paths/register scripts/seed-bootstrap.ts",
-    "migrate:vehicle-identifiers": "ts-node -r tsconfig-paths/register scripts/migrate-vehicle-identifiers.ts",
-    "import:customer-vehicles": "ts-node -r tsconfig-paths/register scripts/import-customer-vehicles.ts",
-    "import:shopmonkey-paste": "ts-node -r tsconfig-paths/register scripts/import-shopmonkey-paste.ts",
-    "migrate:detach-shopmonkey-canned-services": "ts-node -r tsconfig-paths/register scripts/detach-shopmonkey-canned-services.ts",
-    "cleanup:unused-canned-services": "ts-node -r tsconfig-paths/register scripts/cleanup-unused-canned-services.ts",
+    "seed:document-defaults": "ts-node -r tsconfig-paths/register scripts/seed-document-defaults.ts",
+    "import:joist": "ts-node -r tsconfig-paths/register scripts/import-joist-csv.ts",
+    "migrate:estimate-status": "ts-node -r tsconfig-paths/register scripts/normalize-estimate-conversion-status.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -32,6 +30,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1107.0",
+    "@aws-sdk/s3-request-presigner": "^3.1107.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
@@ -41,12 +41,15 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "csv-parse": "^6.2.1",
+    "file-type": "^22.0.1",
     "mongoose": "^9.2.4",
     "pdf-lib": "^1.17.1",
     "puppeteer": "^24.40.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.9.4",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "stripe": "22.4.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -56,6 +59,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",

@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 
-const REFRESH_COOKIE_NAME = 'rico_refresh_token';
+const REFRESH_COOKIE_NAME = 'home_pro_refresh_token';
 
 function parseDurationToMs(value: string) {
   const normalized = value.trim().toLowerCase();
