@@ -76,7 +76,7 @@ async function bootstrap() {
 
   const port = configService.getOrThrow<number>('APP_PORT');
   try {
-    await app.listen(port);
+    await app.listen(port, '0.0.0.0');
   } catch (error: unknown) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error
@@ -85,7 +85,7 @@ async function bootstrap() {
 
     if (code === 'EADDRINUSE') {
       logger.error(
-        `Port ${port} is already in use. Stop the running backend process or set a different APP_PORT before retrying.`,
+        `Port ${port} is already in use. Stop the running backend process or set a different APP_PORT/PORT before retrying.`,
       );
       process.exitCode = 1;
       await app.close();

@@ -1,5 +1,6 @@
 type AppEnv = {
   APP_PORT: number;
+  PORT?: string;
   MONGO_URI: string;
   BUSINESS_TIMEZONE?: string;
   FRONTEND_ORIGIN?: string;
@@ -67,11 +68,13 @@ function requiredMongoUri(env: NodeJS.ProcessEnv): string {
 }
 
 function requiredPort(env: NodeJS.ProcessEnv): number {
-  const value = requiredValue('APP_PORT', env);
+  const platformPort = env.PORT?.trim();
+  const source = platformPort ? 'PORT' : 'APP_PORT';
+  const value = platformPort || requiredValue('APP_PORT', env);
   const port = Number.parseInt(value, 10);
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('APP_PORT must be an integer between 1 and 65535');
+    throw new Error(`${source} must be an integer between 1 and 65535`);
   }
 
   return port;

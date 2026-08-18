@@ -33,6 +33,14 @@ describe('validateEnv', () => {
     expect(env.APP_PORT).toBe(4000);
   });
 
+  it('prefers the platform PORT when it is provided', () => {
+    const env = validateEnv(
+      createEnv({ PORT: '8080', OWNER_ADMIN_PASSWORD: 'secret' }),
+    );
+
+    expect(env.APP_PORT).toBe(8080);
+  });
+
   it('rejects invalid APP_PORT values', () => {
     expect(() =>
       validateEnv(
@@ -51,6 +59,17 @@ describe('validateEnv', () => {
         }),
       ),
     ).toThrow('APP_PORT must be an integer between 1 and 65535');
+  });
+
+  it('rejects an invalid platform PORT instead of falling back', () => {
+    expect(() =>
+      validateEnv(
+        createEnv({
+          PORT: 'invalid',
+          OWNER_ADMIN_PASSWORD: 'secret',
+        }),
+      ),
+    ).toThrow('PORT must be an integer between 1 and 65535');
   });
 
   it('supports MONGO_URI with mongodb protocol', () => {
